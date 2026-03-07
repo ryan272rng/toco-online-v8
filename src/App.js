@@ -150,7 +150,7 @@ export default function App() {
   const trickFeedback = roomData?.trickFeedback || null;
   const roundResult = roomData?.roundResult || null;
 
-  // CÉREBRO: LÓGICA DE PODER E PONTUAÇÃO (Intocada do seu código original)
+  // CÉREBRO: LÓGICA DE PODER E PONTUAÇÃO
   const getCardPower = (card, currentTrump, leadSuit) => {
     const basePower = {
       A: 100,
@@ -164,14 +164,26 @@ export default function App() {
       3: 20,
       2: 10,
     };
+
     let power = basePower[card.label] || 0;
+
+    // SE FOR TRUNFO (Garante a hierarquia exata do seu jogo)
     if (card.suit === currentTrump) {
-      let trumpPower = power;
-      if (card.label === "4") trumpPower = 55;
-      if (card.label === "5") trumpPower = 54;
-      if (card.label === "6") trumpPower = 53;
+      let trumpPower = 0;
+      if (card.label === "A") trumpPower = 100;
+      if (card.label === "3") trumpPower = 95;
+      if (card.label === "7") trumpPower = 90;
+      if (card.label === "2") trumpPower = 85;
+      if (card.label === "K") trumpPower = 80;
+      if (card.label === "4") trumpPower = 75;
+      if (card.label === "J") trumpPower = 70;
+      if (card.label === "5") trumpPower = 65;
+      if (card.label === "Q") trumpPower = 60;
+      if (card.label === "6") trumpPower = 55;
+
       return 1000 + trumpPower;
     }
+
     if (card.suit === leadSuit) return 100 + power;
     return 0;
   };
