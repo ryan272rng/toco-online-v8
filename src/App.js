@@ -399,6 +399,7 @@ export default function App() {
       lives: currentLives,
       gamePoints: currentGP,
     } = stateRef.current;
+
     const loserId = playersList.find((p) => p.id !== winnerId)?.id;
     let resultType = "";
     let updates = {};
@@ -414,7 +415,8 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
-        gPoints[winnerId] = (gPoints[winnerId] || 0) + 1;
+        // CORREÇÃO: Adiciona o ponto de penalidade para quem tomou o toco (loserId)
+        gPoints[loserId] = (gPoints[loserId] || 0) + 1;
         updates = { gamePoints: gPoints, lives: 3 };
       }
     }
@@ -440,9 +442,13 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
           ♦️ TOCO ♣️
         </h1>
+        <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
+          Desenvolvido por Ryan Kilberth
+        </p>
+
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl">
           <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Entrar no Jogo
@@ -670,9 +676,13 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
           ♦️ TOCO ♣️
         </h1>
+        <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
+          Desenvolvido por Ryan Kilberth
+        </p>
+
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
@@ -863,12 +873,17 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative">
         {showCards && (
           <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
+            {/* BOTÃO DA PILHA DISCRETO */}
             <button
               onClick={() => setShowHistory(true)}
-              className="bg-blue-600 hover:bg-blue-500 px-3 py-2 md:px-4 rounded-xl shadow-lg text-white border border-blue-400 font-bold text-[10px] md:text-sm flex flex-col items-center gap-1 transition-transform active:scale-95"
+              className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
             >
-              <span className="text-xl md:text-2xl">🗂️</span>Pilha (
-              {myTricks.length})
+              <span className="text-2xl md:text-3xl drop-shadow-lg opacity-80">
+                🗂️
+              </span>
+              <span className="text-[10px] md:text-xs font-bold tracking-wider">
+                Pilha ({myTricks.length})
+              </span>
             </button>
           </div>
         )}
