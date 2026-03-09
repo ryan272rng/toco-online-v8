@@ -40,7 +40,7 @@ export default function App() {
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [currentHint, setCurrentHint] = useState(null);
+  const [currentHint, setCurrentHint] = useState(null); // Estado para guardar a dica atual
 
   // Referência para evitar bugs de lag
   const stateRef = useRef(roomData);
@@ -203,7 +203,7 @@ export default function App() {
   };
 
   // ============================================================================
-  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO)
+  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO E AGRESSIVO)
   // ============================================================================
   const generateHint = () => {
     if (!me?.id || turn !== me.id) return;
@@ -217,7 +217,7 @@ export default function App() {
     let bestCard = null;
     let explanation = "";
 
-    // Separar as cartas em grupos lógicos
+    // Separar as cartas em grupos lógicos (Consertado o bug 'c is not defined')
     const myTrumps = myHand
       .filter((card) => card.suit === trumpSuit)
       .sort(
@@ -260,31 +260,29 @@ export default function App() {
     if (isFirstToPlay) {
       // SOU O PRIMEIRO A JOGAR
       if (lowTrumps.length > 0) {
-        bestCard = lowTrumps[0]; // Menor trunfo para pescar
+        bestCard = lowTrumps[0]; // Menor trunfo para pescar trunfo alto
         explanation =
           "Tática da Pescaria: Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
       } else {
-        // Pega a carta da mão que dá MENOS PONTOS para o oponente
+        // Pega a carta da mão que dá MENOS PONTOS para o oponente se eu perder
         bestCard = sortedHandByPtsAsc[0];
         const pts = getCardPoints(bestCard, trumpSuit);
 
         if (pts === 0) {
           explanation =
             "Saída Segura: Jogue um Limpo para ver a reação do oponente.";
-        } else if (pts < 10) {
-          explanation =
-            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja o menor possível.";
         } else {
           explanation =
-            "Mão Biscada! Você só tem cartas valiosas. Sacrifique a de menor valor.";
+            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno se você perder.";
         }
       }
     } else {
-      // SOU O SEGUNDO A JOGAR (Contra-ataque)
+      // SOU O SEGUNDO A JOGAR (Contra-ataque Refinado)
       const opCard = tableCards[0].card;
       const opPts = getCardPoints(opCard, trumpSuit);
       const leadSuit = opCard.suit;
       const opPower = getCardPower(opCard, trumpSuit, leadSuit);
+      const opIsTrump = opCard.suit === trumpSuit;
 
       const winningCards = myHand.filter(
         (c) => getCardPower(c, trumpSuit, leadSuit) > opPower
@@ -292,40 +290,36 @@ export default function App() {
       const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
       const winningTrumps = winningCards.filter((c) => c.suit === trumpSuit);
 
-      // Se eu posso ganhar do mesmo naipe E a mesa tem algum ponto (mesmo que seja 2 pontos)
+      // 1. Prioridade: Se eu posso ganhar Seguindo o Naipe (Incarte) e tem pontos na mesa
       if (
         winningLeadSuit.length > 0 &&
         (opPts > 0 || getCardPoints(winningLeadSuit[0], trumpSuit) > 0)
       ) {
-        // Escolhe a carta do naipe que me garante a maior pontuação
+        // Escolhe a carta do naipe que me garante a maior pontuação roubada
         const bestWinningLead = [...winningLeadSuit].sort(
           (a, b) => getCardPoints(b, trumpSuit) - getCardPoints(a, trumpSuit)
         )[0];
         bestCard = bestWinningLead;
-        explanation = `Incarte perfeito! Você ganha a mão e garante ${
-          opPts + getCardPoints(bestCard, trumpSuit)
-        } pontos.`;
+        const myPts = getCardPoints(bestCard, trumpSuit);
+        explanation = `Incarte perfeito! Você ganha a mão seguindo o naipe e rouba ${
+          opPts + myPts
+        } pontos dele.`;
 
-        // Se eu não tenho o naipe da mesa, mas tenho trunfo para cortar pontos (mesmo que poucos pontos)
-      } else if (winningTrumps.length > 0 && opPts > 0) {
-        // Escolhe o menor trunfo possível para não gastar os fortes à toa
-        const efficientCut = winningTrumps.sort(
-          (a, b) =>
-            getCardPower(a, trumpSuit, leadSuit) -
-            getCardPower(b, trumpSuit, leadSuit)
-        )[0];
-        bestCard = efficientCut;
-        explanation = `Corte! A carta dele vale ${opPts} pontos. Use seu trunfo para roubar!`;
+        // 2. Prioridade: Se eu não tenho o naipe, e posso roubar pontos com um Corte (Trunfo)
+      } else if (!opIsTrump && winningTrumps.length > 0 && opPts >= 2) {
+        // Usa o MENOR trunfo possível para fazer o corte de forma eficiente
+        bestCard = winningTrumps[0]; // sortedTrumpsAsc[0]
+        explanation = `Corte! Use seu trunfo baixo para roubar os ${opPts} pontos que ele jogou na mesa.`;
 
-        // Se não dá para ganhar OU se a mesa tem 0 pontos e não quero gastar carta à toa
+        // 3. Prioridade: Descarte (Não tenho oq fazer)
       } else {
-        bestCard = sortedHandByPtsAsc[0]; // Pega a carta que dá o menor prejuízo
+        bestCard = sortedHandByPtsAsc[0]; // Joga a carta de menor valor da mão
         if (getCardPoints(bestCard, trumpSuit) === 0) {
           explanation =
             "Você não consegue vencer (ou não vale a pena). Jogue um Limpo para não dar pontos a ele.";
         } else {
           explanation =
-            "Você vai perder esta mão. Jogue a carta de MENOR valor para o prejuízo ser pequeno.";
+            "Você vai perder esta mão. Jogue a carta de MENOR valor para diminuir o prejuízo.";
         }
       }
     }
@@ -559,7 +553,8 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate">
+        {/* TELA INICIAL REVERTIDA PARA DOURADO E SEM CORTES */}
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
           <span className="text-yellow-400">♦️</span>
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
             TOCO
@@ -570,7 +565,7 @@ export default function App() {
           Desenvolvido por Ryan Kilberth
         </p>
 
-        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl">
+        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl overflow-visible">
           <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Entrar no Jogo
           </p>
@@ -681,27 +676,31 @@ export default function App() {
       ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
       : "";
 
+    // NOVO: Renderizador central simplificado para facilitar a leitura
     const renderCenter = () => {
-      if (card.label === "A")
-        return <div className="text-6xl md:text-7xl drop-shadow-md">{sym}</div>;
+      // Figuras (K, Q, J) mais centralizadas e sem cortar número
       if (card.label === "K")
-        return <div className="text-5xl md:text-6xl drop-shadow-md">🤴</div>;
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
       if (card.label === "Q")
-        return <div className="text-5xl md:text-6xl drop-shadow-md">👸</div>;
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
       if (card.label === "J")
-        return <div className="text-5xl md:text-6xl drop-shadow-md">💂</div>;
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
+
       const num = parseInt(card.label);
       if (!isNaN(num)) {
-        let cols = "grid-cols-2";
-        if (num === 2 || num === 3) cols = "grid-cols-1";
+        // Padrão simplificado para números: Símbolos menores em grade
+        let grid = "grid-cols-1";
+        if (num >= 4) grid = "grid-cols-2";
+        if (num >= 7) grid = "grid-cols-3";
+
         return (
           <div
-            className={`grid ${cols} gap-x-3 gap-y-1 items-center justify-items-center h-full py-2 w-full px-2`}
+            className={`grid ${grid} gap-1 items-center justify-items-center h-full py-1 w-full px-1.5`}
           >
             {Array.from({ length: num }).map((_, i) => (
               <span
                 key={i}
-                className={`text-xl md:text-2xl leading-none ${
+                className={`text-base md:text-lg leading-none ${
                   i >= Math.ceil(num / 2) ? "rotate-180" : ""
                 }`}
               >
@@ -711,13 +710,13 @@ export default function App() {
           </div>
         );
       }
-      return null;
+      return <div className="text-5xl md:text-6xl drop-shadow-sm">{sym}</div>; // Ás (A)
     };
 
     return (
       <div
         onClick={() => playable && !localProcessing && onClick(card)}
-        className={`w-[72px] h-[104px] md:w-24 md:h-36 bg-gradient-to-br from-white to-gray-50 rounded-lg md:rounded-xl border border-gray-300 shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden ${opacityClass} ${hintClass} ${
+        className={`w-[72px] h-[104px] md:w-24 md:h-36 bg-gradient-to-br from-white to-gray-50 rounded-lg md:rounded-xl border border-gray-300 shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-2 ${opacityClass} ${hintClass} ${
           playable && !localProcessing
             ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
             : ""
@@ -726,27 +725,34 @@ export default function App() {
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden">
           {sym}
         </div>
+
+        {/* Número e naipe do canto (Tamanho otimizado) */}
         <div
-          className={`absolute top-1 left-1.5 flex flex-col items-center leading-none ${color}`}
+          className={`absolute top-1 left-1.5 flex flex-col items-center leading-none ${color} z-10`}
         >
-          <span className="font-bold text-[11px] md:text-sm tracking-tighter">
+          <span className="font-bold text-[13px] md:text-sm tracking-tighter">
             {card.label}
           </span>
-          <span className="text-[9px] md:text-xs -mt-0.5">{sym}</span>
+          <span className="text-[10px] md:text-xs -mt-0.5">{sym}</span>
         </div>
+
+        {/* Desenho Central Limpo */}
         <div
-          className={`flex-1 flex items-center justify-center w-full mt-2 ${color}`}
+          className={`flex-1 flex items-center justify-center w-full mt-2.5 mb-1 ${color}`}
         >
           {renderCenter()}
         </div>
+
+        {/* Número e naipe do canto invertido */}
         <div
-          className={`absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180 ${color}`}
+          className={`absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180 ${color} z-10`}
         >
-          <span className="font-bold text-[11px] md:text-sm tracking-tighter">
+          <span className="font-bold text-[13px] md:text-sm tracking-tighter">
             {card.label}
           </span>
-          <span className="text-[9px] md:text-xs -mt-0.5">{sym}</span>
+          <span className="text-[10px] md:text-xs -mt-0.5">{sym}</span>
         </div>
+
         {isTrump && (
           <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
             <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
@@ -776,14 +782,14 @@ export default function App() {
 
   const CardBack = () => (
     <div
-      className="w-[72px] h-[104px] md:w-24 md:h-36 bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden"
+      className="w-[72px] h-[104px] md:w-24 md:h-36 bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2"
       style={{
         backgroundImage:
           "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
       }}
     >
       <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
-      <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80">
+      <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
         <span className="text-white/20 text-2xl md:text-3xl">♠</span>
       </div>
     </div>
@@ -795,7 +801,8 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate">
+        {/* TELA DE LOBBY REVERTIDA PARA DOURADO */}
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
           <span className="text-yellow-400">♦️</span>
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
             TOCO
@@ -805,7 +812,8 @@ export default function App() {
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
         </p>
-        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative">
+
+        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
             <span className="font-mono text-2xl tracking-widest bg-white/30 px-2 rounded">
@@ -933,7 +941,7 @@ export default function App() {
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
             <button
               onClick={() => setCurrentHint(null)}
-              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white"
+              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50"
             >
               X
             </button>
@@ -1008,10 +1016,10 @@ export default function App() {
       </div>
 
       {/* MINHA MÃO E CONTROLES */}
-      <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative">
+      <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA (Esquerda) */}
+            {/* BOTÃO DA PILHA (Esquerda - UX) */}
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
               <button
                 onClick={() => setShowHistory(true)}
@@ -1026,7 +1034,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* NOVO BOTÃO DA DICA (Direita, agora fácil de clicar!) */}
+            {/* BOTÃO DA DICA (Direita - UX Otimizada) */}
             {turn === me?.id && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
                 <button
@@ -1058,12 +1066,14 @@ export default function App() {
             </span>
           )}
         </div>
-        <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2">
+
+        {/* Minha mão de cartas (Design Otimizado) */}
+        <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2 overflow-visible">
           {showCards &&
             myHand.map((card) => (
               <div
                 key={card.id}
-                className="transition-transform duration-200 hover:-translate-y-6 hover:z-20"
+                className="transition-transform duration-200 hover:-translate-y-6 hover:z-20 overflow-visible"
               >
                 <CardFace
                   card={card}
@@ -1080,7 +1090,7 @@ export default function App() {
       {gameState === "choose_trump" && (
         <div className="absolute inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           {tocoTarget === me?.id ? (
-            <div className="bg-white rounded-3xl p-8 text-center shadow-[0_0_50px_rgba(250,204,21,0.4)] max-w-sm w-full border-4 border-yellow-500 relative overflow-hidden">
+            <div className="bg-white rounded-3xl p-8 text-center shadow-[0_0_50px_rgba(250,204,21,0.4)] max-w-sm w-full border-4 border-yellow-500 relative overflow-visible">
               <div className="absolute top-0 left-0 w-full h-3 bg-yellow-500"></div>
               <h2 className="text-3xl font-black mb-2 text-gray-800 mt-2">
                 VOCÊ ESTÁ NO TOCO!
@@ -1088,12 +1098,12 @@ export default function App() {
               <p className="text-gray-500 mb-8 text-sm font-medium">
                 Escolha o naipe do trunfo para começar.
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 overflow-visible">
                 {Object.keys(SUITS).map((s) => (
                   <button
                     key={s}
                     onClick={() => confirmTrumpAndDeal(s)}
-                    className="group border-2 border-gray-100 p-6 rounded-2xl hover:bg-yellow-50 hover:border-yellow-400 flex flex-col items-center transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md bg-gray-50"
+                    className="group border-2 border-gray-100 p-6 rounded-2xl hover:bg-yellow-50 hover:border-yellow-400 flex flex-col items-center transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md bg-gray-50 overflow-visible"
                   >
                     <span className="text-5xl mb-3 group-hover:scale-125 transition-transform duration-200">
                       {SUITS[s].symbol}
@@ -1124,7 +1134,7 @@ export default function App() {
       {/* MODAL: HISTÓRICO DA PILHA */}
       {showHistory && (
         <div className="absolute inset-0 bg-black/95 z-[60] flex flex-col items-center p-6 overflow-y-auto backdrop-blur-md">
-          <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4">
+          <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4 z-10">
             <h2 className="text-3xl font-black text-yellow-400 drop-shadow">
               Sua Pilha 🗂️
             </h2>
@@ -1172,8 +1182,8 @@ export default function App() {
       {gameState === "round_end" && (
         <div className="absolute inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-gradient-to-br from-gray-900 to-black p-1 rounded-3xl shadow-[0_0_80px_rgba(234,179,8,0.4)] max-w-sm w-full border border-gray-700">
-            <div className="bg-gray-900/50 backdrop-blur-md p-10 rounded-[22px] text-center">
-              <div className="text-3xl font-black text-white mb-8 uppercase flex flex-col gap-3 leading-tight tracking-wide drop-shadow-md">
+            <div className="bg-gray-900/50 backdrop-blur-md p-10 rounded-[22px] text-center overflow-visible">
+              <div className="text-3xl font-black text-white mb-8 uppercase flex flex-col gap-3 leading-tight tracking-wide drop-shadow-md overflow-visible">
                 <EndGameMessage />
               </div>
               {me?.isHost ? (
