@@ -7,8 +7,8 @@ import { ref, onValue, set, update, get, remove } from "firebase/database";
 // ============================================================================
 const SUITS = {
   hearts: { symbol: "♥️", color: "text-red-600", name: "Copas" },
-  diamonds: { symbol: "♦️", color: "text-red-600", name: "Ouros" },
-  clubs: { symbol: "♣️", color: "text-slate-900", name: "Paus" },
+  diamonds: { symbol: "♦", color: "text-red-600", name: "Ouros" }, // Removido emoji selector para aceitar cor dourada no título
+  clubs: { symbol: "♣", color: "text-slate-900", name: "Paus" }, // Removido emoji selector
   spades: { symbol: "♠️", color: "text-slate-900", name: "Espadas" },
 };
 
@@ -40,7 +40,7 @@ export default function App() {
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [currentHint, setCurrentHint] = useState(null); // Estado para guardar a dica atual
+  const [currentHint, setCurrentHint] = useState(null);
 
   // Referência para evitar bugs de lag
   const stateRef = useRef(roomData);
@@ -203,7 +203,7 @@ export default function App() {
   };
 
   // ============================================================================
-  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO E AGRESSIVO)
+  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO)
   // ============================================================================
   const generateHint = () => {
     if (!me?.id || turn !== me.id) return;
@@ -217,7 +217,6 @@ export default function App() {
     let bestCard = null;
     let explanation = "";
 
-    // Separar as cartas em grupos lógicos (Consertado o bug 'c is not defined')
     const myTrumps = myHand
       .filter((card) => card.suit === trumpSuit)
       .sort(
@@ -232,7 +231,7 @@ export default function App() {
       (a, b) => getCardPoints(a, trumpSuit) - getCardPoints(b, trumpSuit)
     );
 
-    // REGRA DE OURO: Tudo ou Nada (Se bater 31, joga!)
+    // REGRA DE OURO: Tudo ou Nada
     if (!isFirstToPlay) {
       const opCard = tableCards[0].card;
       const leadSuit = opCard.suit;
@@ -243,7 +242,6 @@ export default function App() {
         const cardPts = getCardPoints(card, trumpSuit);
         const cardPower = getCardPower(card, trumpSuit, leadSuit);
 
-        // Se eu ganho a mão E a soma passa de 31
         if (
           cardPower > opPower &&
           myCurrentScore + tablePoints + cardPts >= POINTS_GOAL
@@ -258,26 +256,22 @@ export default function App() {
     }
 
     if (isFirstToPlay) {
-      // SOU O PRIMEIRO A JOGAR
       if (lowTrumps.length > 0) {
-        bestCard = lowTrumps[0]; // Menor trunfo para pescar trunfo alto
+        bestCard = lowTrumps[0];
         explanation =
-          "Tática da Pescaria: Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
+          "Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
       } else {
-        // Pega a carta da mão que dá MENOS PONTOS para o oponente se eu perder
         bestCard = sortedHandByPtsAsc[0];
         const pts = getCardPoints(bestCard, trumpSuit);
 
         if (pts === 0) {
-          explanation =
-            "Saída Segura: Jogue um Limpo para ver a reação do oponente.";
+          explanation = "Jogue um Limpo para ver a reação do oponente.";
         } else {
           explanation =
-            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno se você perder.";
+            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno.";
         }
       }
     } else {
-      // SOU O SEGUNDO A JOGAR (Contra-ataque Refinado)
       const opCard = tableCards[0].card;
       const opPts = getCardPoints(opCard, trumpSuit);
       const leadSuit = opCard.suit;
@@ -290,36 +284,37 @@ export default function App() {
       const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
       const winningTrumps = winningCards.filter((c) => c.suit === trumpSuit);
 
-      // 1. Prioridade: Se eu posso ganhar Seguindo o Naipe (Incarte) e tem pontos na mesa
+      // 1. Ganhar seguindo o naipe (Encarte ou Corte em cima de Corte)
       if (
         winningLeadSuit.length > 0 &&
         (opPts > 0 || getCardPoints(winningLeadSuit[0], trumpSuit) > 0)
       ) {
-        // Escolhe a carta do naipe que me garante a maior pontuação roubada
         const bestWinningLead = [...winningLeadSuit].sort(
           (a, b) => getCardPoints(b, trumpSuit) - getCardPoints(a, trumpSuit)
         )[0];
         bestCard = bestWinningLead;
         const myPts = getCardPoints(bestCard, trumpSuit);
-        explanation = `Incarte perfeito! Você ganha a mão seguindo o naipe e rouba ${
-          opPts + myPts
-        } pontos dele.`;
 
-        // 2. Prioridade: Se eu não tenho o naipe, e posso roubar pontos com um Corte (Trunfo)
+        if (leadSuit === trumpSuit) {
+          explanation = `Corte! Você tem um trunfo maior. Roube os pontos da mesa.`;
+        } else {
+          explanation = `Encarte! Jogue uma carta maior do mesmo naipe e garanta os pontos.`;
+        }
+
+        // 2. Não tem o naipe, mas tem trunfo (Corte)
       } else if (!opIsTrump && winningTrumps.length > 0 && opPts >= 2) {
-        // Usa o MENOR trunfo possível para fazer o corte de forma eficiente
-        bestCard = winningTrumps[0]; // sortedTrumpsAsc[0]
-        explanation = `Corte! Use seu trunfo baixo para roubar os ${opPts} pontos que ele jogou na mesa.`;
+        bestCard = winningTrumps[0];
+        explanation = `Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.`;
 
-        // 3. Prioridade: Descarte (Não tenho oq fazer)
+        // 3. Descarte
       } else {
-        bestCard = sortedHandByPtsAsc[0]; // Joga a carta de menor valor da mão
+        bestCard = sortedHandByPtsAsc[0];
         if (getCardPoints(bestCard, trumpSuit) === 0) {
           explanation =
-            "Você não consegue vencer (ou não vale a pena). Jogue um Limpo para não dar pontos a ele.";
+            "Não vale a pena gastar carta boa. Jogue um Limpo para não dar pontos a ele.";
         } else {
           explanation =
-            "Você vai perder esta mão. Jogue a carta de MENOR valor para diminuir o prejuízo.";
+            "Descarte a sua carta de MENOR valor para diminuir o prejuízo.";
         }
       }
     }
@@ -405,7 +400,7 @@ export default function App() {
     if (alreadyPlayed) return;
 
     setLocalProcessing(true);
-    setCurrentHint(null); // Esconde a dica ao jogar
+    setCurrentHint(null);
 
     const myHand = hands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
@@ -550,63 +545,75 @@ export default function App() {
   if (!roomId) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center text-white font-sans p-4 overflow-y-auto"
         translate="no"
       >
-        {/* TELA INICIAL REVERTIDA PARA DOURADO E SEM CORTES */}
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
-          <span className="text-yellow-400">♦️</span>
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
-            TOCO
-          </span>
-          <span className="text-yellow-500">♣️</span>
-        </h1>
-        <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
-          Desenvolvido por Ryan Kilberth
-        </p>
-
-        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl overflow-visible">
-          <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
-            Entrar no Jogo
-          </p>
-          <input
-            type="text"
-            placeholder="Seu Nome ou Apelido"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-yellow-500 text-center font-bold"
-          />
-          {errorMsg && (
-            <p className="text-red-400 text-sm mb-4 font-bold animate-pulse">
-              {errorMsg}
-            </p>
-          )}
-          <button
-            onClick={createRoom}
-            className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95"
-          >
-            CRIAR NOVA SALA
-          </button>
-          <div className="flex items-center gap-2 mb-6">
-            <div className="h-px bg-white/20 flex-1"></div>
-            <span className="text-xs text-gray-500 uppercase">Ou</span>
-            <div className="h-px bg-white/20 flex-1"></div>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              placeholder="PIN"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              maxLength={4}
-              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
-            />
-            <button
-              onClick={joinRoom}
-              className="bg-blue-600 text-white font-black px-6 py-3 rounded-xl hover:bg-blue-500 shadow-lg uppercase text-sm transition-transform active:scale-95"
+        {/* TELA INICIAL DOURADA PERFEITA */}
+        <div className="w-full max-w-sm flex flex-col items-center justify-center pt-10 md:pt-20 pb-24">
+          <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
+            <span
+              className="text-yellow-400 font-sans"
+              style={{ color: "#facc15" }}
             >
-              ENTRAR
+              ♦
+            </span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
+              TOCO
+            </span>
+            <span
+              className="text-yellow-500 font-sans"
+              style={{ color: "#eab308" }}
+            >
+              ♣
+            </span>
+          </h1>
+          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
+            Desenvolvido por Ryan Kilberth
+          </p>
+
+          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full shadow-2xl">
+            <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
+              Entrar no Jogo
+            </p>
+            <input
+              type="text"
+              placeholder="Seu Nome ou Apelido"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-yellow-500 text-center font-bold"
+            />
+            {errorMsg && (
+              <p className="text-red-400 text-sm mb-4 font-bold animate-pulse">
+                {errorMsg}
+              </p>
+            )}
+            <button
+              onClick={createRoom}
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95"
+            >
+              CRIAR NOVA SALA
             </button>
+            <div className="flex items-center gap-2 mb-6">
+              <div className="h-px bg-white/20 flex-1"></div>
+              <span className="text-xs text-gray-500 uppercase">Ou</span>
+              <div className="h-px bg-white/20 flex-1"></div>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="PIN"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                maxLength={4}
+                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
+              />
+              <button
+                onClick={joinRoom}
+                className="bg-blue-600 text-white font-black px-6 py-3 rounded-xl hover:bg-blue-500 shadow-lg uppercase text-sm transition-transform active:scale-95"
+              >
+                ENTRAR
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -670,15 +677,19 @@ export default function App() {
     const isTrump = card.suit === trumpSuit;
     const opacityClass =
       localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
+    // Força o símbolo ser do próprio naipe da carta, sem emoji variation
+    const sym =
+      card.suit === "diamonds"
+        ? "♦"
+        : card.suit === "clubs"
+        ? "♣"
+        : SUITS[card.suit].symbol;
     const color = SUITS[card.suit].color;
-    const sym = SUITS[card.suit].symbol;
     const hintClass = isHinted
       ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
       : "";
 
-    // NOVO: Renderizador central simplificado para facilitar a leitura
     const renderCenter = () => {
-      // Figuras (K, Q, J) mais centralizadas e sem cortar número
       if (card.label === "K")
         return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
       if (card.label === "Q")
@@ -688,7 +699,6 @@ export default function App() {
 
       const num = parseInt(card.label);
       if (!isNaN(num)) {
-        // Padrão simplificado para números: Símbolos menores em grade
         let grid = "grid-cols-1";
         if (num >= 4) grid = "grid-cols-2";
         if (num >= 7) grid = "grid-cols-3";
@@ -710,7 +720,11 @@ export default function App() {
           </div>
         );
       }
-      return <div className="text-5xl md:text-6xl drop-shadow-sm">{sym}</div>; // Ás (A)
+      return (
+        <div className="text-5xl md:text-6xl drop-shadow-sm font-sans">
+          {sym}
+        </div>
+      );
     };
 
     return (
@@ -722,35 +736,36 @@ export default function App() {
             : ""
         }`}
       >
-        <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans">
           {sym}
         </div>
 
-        {/* Número e naipe do canto (Tamanho otimizado) */}
         <div
           className={`absolute top-1 left-1.5 flex flex-col items-center leading-none ${color} z-10`}
         >
           <span className="font-bold text-[13px] md:text-sm tracking-tighter">
             {card.label}
           </span>
-          <span className="text-[10px] md:text-xs -mt-0.5">{sym}</span>
+          <span className="text-[10px] md:text-xs -mt-0.5 font-sans">
+            {sym}
+          </span>
         </div>
 
-        {/* Desenho Central Limpo */}
         <div
           className={`flex-1 flex items-center justify-center w-full mt-2.5 mb-1 ${color}`}
         >
           {renderCenter()}
         </div>
 
-        {/* Número e naipe do canto invertido */}
         <div
           className={`absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180 ${color} z-10`}
         >
           <span className="font-bold text-[13px] md:text-sm tracking-tighter">
             {card.label}
           </span>
-          <span className="text-[10px] md:text-xs -mt-0.5">{sym}</span>
+          <span className="text-[10px] md:text-xs -mt-0.5 font-sans">
+            {sym}
+          </span>
         </div>
 
         {isTrump && (
@@ -762,23 +777,31 @@ export default function App() {
     );
   };
 
-  const MiniCard = ({ card }) => (
-    <div className="relative w-10 h-14 bg-white rounded border border-gray-300 shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden">
-      <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl">
-        {SUITS[card.suit].symbol}
+  const MiniCard = ({ card }) => {
+    const sym =
+      card.suit === "diamonds"
+        ? "♦"
+        : card.suit === "clubs"
+        ? "♣"
+        : SUITS[card.suit].symbol;
+    return (
+      <div className="relative w-10 h-14 bg-white rounded border border-gray-300 shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl font-sans">
+          {sym}
+        </div>
+        <span
+          className={`text-xs font-bold leading-none z-10 ${
+            SUITS[card.suit].color
+          }`}
+        >
+          {card.label}
+        </span>
+        <span className={`text-xl z-10 ${SUITS[card.suit].color} font-sans`}>
+          {sym}
+        </span>
       </div>
-      <span
-        className={`text-xs font-bold leading-none z-10 ${
-          SUITS[card.suit].color
-        }`}
-      >
-        {card.label}
-      </span>
-      <span className={`text-xl z-10 ${SUITS[card.suit].color}`}>
-        {SUITS[card.suit].symbol}
-      </span>
-    </div>
-  );
+    );
+  };
 
   const CardBack = () => (
     <div
@@ -801,13 +824,22 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        {/* TELA DE LOBBY REVERTIDA PARA DOURADO */}
         <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
-          <span className="text-yellow-400">♦️</span>
+          <span
+            className="text-yellow-400 font-sans"
+            style={{ color: "#facc15" }}
+          >
+            ♦
+          </span>
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
             TOCO
           </span>
-          <span className="text-yellow-500">♣️</span>
+          <span
+            className="text-yellow-500 font-sans"
+            style={{ color: "#eab308" }}
+          >
+            ♣
+          </span>
         </h1>
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
@@ -946,8 +978,6 @@ export default function App() {
               X
             </button>
             <p className="text-sm md:text-base font-medium text-blue-50 leading-tight">
-              🤖 <strong>Dica do Bot:</strong>
-              <br />
               {currentHint.text}
             </p>
           </div>
@@ -979,8 +1009,12 @@ export default function App() {
           )}
           {trumpSuit && (
             <div className="w-10 h-10 md:w-14 md:h-14 bg-white rounded-full border-4 border-yellow-500 flex items-center justify-center text-xl md:text-3xl shadow-[0_0_15px_rgba(250,204,21,0.5)]">
-              <span className={SUITS[trumpSuit].color}>
-                {SUITS[trumpSuit].symbol}
+              <span className={`${SUITS[trumpSuit].color} font-sans`}>
+                {SUITS[trumpSuit].symbol === "♦️"
+                  ? "♦"
+                  : SUITS[trumpSuit].symbol === "♣️"
+                  ? "♣"
+                  : SUITS[trumpSuit].symbol}
               </span>
             </div>
           )}
@@ -1019,7 +1053,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA (Esquerda - UX) */}
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
               <button
                 onClick={() => setShowHistory(true)}
@@ -1034,7 +1067,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* BOTÃO DA DICA (Direita - UX Otimizada) */}
             {turn === me?.id && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
                 <button
@@ -1067,7 +1099,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Minha mão de cartas (Design Otimizado) */}
         <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2 overflow-visible">
           {showCards &&
             myHand.map((card) => (
@@ -1105,8 +1136,12 @@ export default function App() {
                     onClick={() => confirmTrumpAndDeal(s)}
                     className="group border-2 border-gray-100 p-6 rounded-2xl hover:bg-yellow-50 hover:border-yellow-400 flex flex-col items-center transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md bg-gray-50 overflow-visible"
                   >
-                    <span className="text-5xl mb-3 group-hover:scale-125 transition-transform duration-200">
-                      {SUITS[s].symbol}
+                    <span className="text-5xl mb-3 group-hover:scale-125 transition-transform duration-200 font-sans">
+                      {SUITS[s].symbol === "♦️"
+                        ? "♦"
+                        : SUITS[s].symbol === "♣️"
+                        ? "♣"
+                        : SUITS[s].symbol}
                     </span>
                     <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase tracking-widest">
                       {SUITS[s].name}
