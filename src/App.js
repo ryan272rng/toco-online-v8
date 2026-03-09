@@ -40,12 +40,18 @@ export default function App() {
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [currentHint, setCurrentHint] = useState(null); // Estado para guardar a dica atual
 
   // Referência para evitar bugs de lag
   const stateRef = useRef(roomData);
   useEffect(() => {
     stateRef.current = roomData;
   }, [roomData]);
+
+  // Limpa a dica quando a mesa muda
+  useEffect(() => {
+    setCurrentHint(null);
+  }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
   // 3. FUNÇÕES DE REDE E LOBBY
@@ -95,7 +101,6 @@ export default function App() {
         [myId]: newMe,
       });
 
-      // Inicializa a pontuação zerada para o novo jogador
       await update(ref(database, `rooms/${pinInput}/roundScores`), {
         [myId]: 0,
       });
@@ -110,7 +115,6 @@ export default function App() {
     }
   };
 
-  // Escuta as mudanças no servidor em tempo real
   useEffect(() => {
     if (!roomId) return;
     const roomRef = ref(database, `rooms/${roomId}`);
@@ -125,16 +129,14 @@ export default function App() {
     return () => unsubscribe();
   }, [roomId]);
 
-  // Função para enviar atualizações fáceis para o Firebase
   const syncState = (updates) => {
     if (!roomId) return;
     update(ref(database, `rooms/${roomId}`), updates);
   };
 
   // ============================================================================
-  // 4. LÓGICA DO JOGO (ADAPTADA DO SEU CÓDIGO ORIGINAL)
+  // 4. LÓGICA DO JOGO
   // ============================================================================
-  // Extraindo variáveis de forma fácil
   const playersList = roomData?.players ? Object.values(roomData.players) : [];
   const gameState = roomData?.gameState || "lobby";
   const tableCards = roomData?.tableCards || [];
@@ -150,7 +152,6 @@ export default function App() {
   const trickFeedback = roomData?.trickFeedback || null;
   const roundResult = roomData?.roundResult || null;
 
-  // CÉREBRO: LÓGICA DE PODER E PONTUAÇÃO
   const getCardPower = (card, currentTrump, leadSuit) => {
     const basePower = {
       A: 100,
@@ -164,10 +165,7 @@ export default function App() {
       3: 20,
       2: 10,
     };
-
     let power = basePower[card.label] || 0;
-
-    // SE FOR TRUNFO (Garante a hierarquia exata do seu jogo)
     if (card.suit === currentTrump) {
       let trumpPower = 0;
       if (card.label === "A") trumpPower = 100;
@@ -180,10 +178,8 @@ export default function App() {
       if (card.label === "5") trumpPower = 65;
       if (card.label === "Q") trumpPower = 60;
       if (card.label === "6") trumpPower = 55;
-
       return 1000 + trumpPower;
     }
-
     if (card.suit === leadSuit) return 100 + power;
     return 0;
   };
@@ -204,6 +200,177 @@ export default function App() {
       if (label === "6") return 2;
     }
     return 0;
+  };
+
+  // ============================================================================
+  // NOVO: O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco)
+  // ============================================================================
+  const generateHint = () => {
+    if (!me?.id || turn !== me.id) return;
+
+    const myHand = hands[me.id] || [];
+    if (myHand.length === 0) return;
+
+    const myCurrentScore = roundScores[me.id] || 0;
+    const isFirstToPlay = tableCards.length === 0;
+
+    let bestCard = null;
+    let explanation = "";
+
+    // Separar as cartas em grupos lógicos
+    const myTrumps = myHand
+      .filter((c) => c.suit === trumpSuit)
+      .sort(
+        (a, b) =>
+          getCardPower(a, trumpSuit, trumpSuit) -
+          getCardPower(b, trumpSuit, trumpSuit)
+      );
+    const lowTrumps = myTrumps.filter((c) =>
+      ["Q", "J", "K", "4", "5", "6"].includes(c.label)
+    );
+    const highTrumps = myTrumps.filter((c) =>
+      ["A", "3", "7", "2"].includes(c.label)
+    );
+    const myNonTrumps = myHand
+      .filter((c) => c.suit !== trumpSuit)
+      .sort(
+        (a, b) =>
+          getCardPower(a, trumpSuit, c.suit) -
+          getCardPower(b, trumpSuit, c.suit)
+      );
+    const nonTrumpBiscas = myNonTrumps.filter((c) =>
+      ["A", "7"].includes(c.label)
+    );
+    const cleanCards = myNonTrumps.filter((c) => !["A", "7"].includes(c.label)); // Limpos e figuras
+
+    // REGRA DE OURO: Tudo ou Nada (Se bater 31, joga!)
+    if (!isFirstToPlay) {
+      const tablePoints = getCardPoints(tableCards[0].card, trumpSuit);
+      const leadSuit = tableCards[0].card.suit;
+
+      for (let card of myHand) {
+        const cardPts = getCardPoints(card, trumpSuit);
+        const cardPower = getCardPower(card, trumpSuit, leadSuit);
+        const opPower = getCardPower(tableCards[0].card, trumpSuit, leadSuit);
+
+        // Se eu ganho a mão E a soma passa de 31
+        if (
+          cardPower > opPower &&
+          myCurrentScore + tablePoints + cardPts >= POINTS_GOAL
+        ) {
+          setCurrentHint({
+            cardId: card.id,
+            text: "Jogue esta! Você vai chegar aos 31 pontos e ganhar a partida agora!",
+          });
+          return;
+        }
+      }
+    }
+
+    if (isFirstToPlay) {
+      // SOU O PRIMEIRO A JOGAR
+      if (lowTrumps.length > 0) {
+        // Tática da Pescaria (Adicionado o K aqui tbm)
+        bestCard = lowTrumps[0]; // Menor trunfo
+        explanation =
+          "Tática da Pescaria: Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
+      } else if (cleanCards.length > 0) {
+        // Saída limpa comum
+        bestCard = cleanCards[0];
+        explanation =
+          "Jogue um Limpo. Deixe a responsabilidade de gastar cartas boas para o oponente.";
+      } else if (nonTrumpBiscas.length > 0) {
+        // Mão Biscada
+        const sete = nonTrumpBiscas.find((c) => c.label === "7");
+        if (sete) {
+          bestCard = sete;
+          explanation =
+            "Mão Biscada! Sacrifique o 7 em vez do Ás, pois ele dá menos pontos caso você tome um corte.";
+        } else {
+          bestCard = nonTrumpBiscas[0];
+          explanation =
+            "Você só tem pedreira. Jogue e reze para ele não ter trunfo!";
+        }
+      } else {
+        // Só sobrou Trunfo Gigante
+        bestCard = myHand[0];
+        explanation = "Não tem jeito, você terá que gastar um trunfo grande.";
+      }
+    } else {
+      // SOU O SEGUNDO A JOGAR (Contra-ataque)
+      const opCard = tableCards[0].card;
+      const opPts = getCardPoints(opCard, trumpSuit);
+      const leadSuit = opCard.suit;
+      const opIsTrump = opCard.suit === trumpSuit;
+
+      const cardsOfLeadSuit = myHand
+        .filter((c) => c.suit === leadSuit)
+        .sort(
+          (a, b) =>
+            getCardPower(a, trumpSuit, leadSuit) -
+            getCardPower(b, trumpSuit, leadSuit)
+        );
+
+      if (cardsOfLeadSuit.length > 0) {
+        // TENHO O NAIPE DA MESA (Incarte)
+        const myBiscasOfSuit = cardsOfLeadSuit.filter((c) =>
+          ["A", "7"].includes(c.label)
+        );
+        const winningBiscas = myBiscasOfSuit.filter(
+          (c) =>
+            getCardPower(c, trumpSuit, leadSuit) >
+            getCardPower(opCard, trumpSuit, leadSuit)
+        );
+
+        if (winningBiscas.length > 0 && opPts > 0) {
+          bestCard = winningBiscas[0];
+          explanation =
+            "Incarte com Bisca! Roube os pontos que ele colocou na mesa.";
+        } else {
+          bestCard = cardsOfLeadSuit[0]; // Joga a menor
+          explanation =
+            "Não vale a pena incartar gastando coisa boa se a mesa não tem pontos. Descarte a mais baixa.";
+        }
+      } else {
+        // NÃO TENHO O NAIPE (Corte ou Descarte)
+        if (myTrumps.length > 0 && opPts >= 10 && !opIsTrump) {
+          // Corte de cartas valiosas
+          if (lowTrumps.length > 0) {
+            bestCard = lowTrumps[0];
+            explanation =
+              "Corte Perfeito! Use um trunfo baixo para roubar os pontos altos dele.";
+          } else {
+            bestCard = myTrumps[0];
+            explanation =
+              "Vale a pena gastar esse trunfo alto para garantir esses pontos.";
+          }
+        } else if (
+          myTrumps.length > 0 &&
+          opPts < 10 &&
+          opPts > 0 &&
+          lowTrumps.length > 0
+        ) {
+          // Cortar lixo com lixo
+          bestCard = lowTrumps[0];
+          explanation =
+            "Mesa fraca. Use seu menor corte só para não perder a vez.";
+        } else {
+          // Descarte (Jogar o lixo fora pq nao tem oq fazer ou pq ele jogou lixo)
+          if (cleanCards.length > 0) {
+            bestCard = cleanCards[0];
+            explanation =
+              "Descarte. Não gaste trunfo em mesa sem ponto. Entregue um Limpo para ele.";
+          } else {
+            bestCard = myHand[0];
+            explanation = "Situação difícil. Jogue a de menor valor.";
+          }
+        }
+      }
+    }
+
+    if (bestCard) {
+      setCurrentHint({ cardId: bestCard.id, text: explanation });
+    }
   };
 
   const createDeepShuffleDeck = () => {
@@ -230,14 +397,9 @@ export default function App() {
     if (!me?.isHost) return;
     const pts = {};
     playersList.forEach((p) => (pts[p.id] = 0));
-
     const randomStartId =
       playersList[Math.floor(Math.random() * playersList.length)].id;
-
-    syncState({
-      gamePoints: pts,
-      tocoTarget: randomStartId,
-    });
+    syncState({ gamePoints: pts, tocoTarget: randomStartId });
     setTimeout(() => startNewHand(randomStartId), 100);
   };
 
@@ -245,7 +407,6 @@ export default function App() {
     if (!me?.isHost) return;
     const rScores = {};
     playersList.forEach((p) => (rScores[p.id] = 0));
-
     syncState({
       deck: createDeepShuffleDeck(),
       roundScores: rScores,
@@ -279,7 +440,7 @@ export default function App() {
         gameState: "playing",
       });
     }
-  }, [gameState, me?.isHost]); // Removido roomData das dependências para evitar loop infinito
+  }, [gameState, me?.isHost]);
 
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
@@ -288,6 +449,7 @@ export default function App() {
     if (alreadyPlayed) return;
 
     setLocalProcessing(true);
+    setCurrentHint(null); // Esconde a dica ao jogar
 
     const myHand = hands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
@@ -307,7 +469,6 @@ export default function App() {
     });
   };
 
-  // Resolvendo a jogada se a mesa estiver cheia
   useEffect(() => {
     if (
       me?.isHost &&
@@ -327,10 +488,9 @@ export default function App() {
   }, [tableCards.length, turn, me?.id]);
 
   const resolveRound = (cards) => {
-    // CORREÇÃO: Forçando listas vazias caso o Firebase tenha apagado para economizar espaço
     const currentRS = stateRef.current?.roundScores || {};
     const currentT = stateRef.current?.trumpSuit;
-    const currentHistory = stateRef.current?.trickHistory || []; // <- O truque está aqui!
+    const currentHistory = stateRef.current?.trickHistory || [];
 
     let validCards = cards;
     if (cards.length > 2) validCards = cards.slice(-2);
@@ -372,7 +532,6 @@ export default function App() {
       handleGameEnd(winnerId);
     } else {
       setTimeout(() => {
-        // CORREÇÃO: Garantindo que o baralho e as mãos não deem erro se estiverem vazios
         const freshDeck = [...(stateRef.current?.deck || [])];
         const freshHands = { ...(stateRef.current?.hands || {}) };
 
@@ -385,10 +544,8 @@ export default function App() {
           if (freshHands[loserId])
             freshHands[loserId] = [...(freshHands[loserId] || []), c2];
         }
-
         syncState({ hands: freshHands, deck: freshDeck, turn: winnerId });
       }, 300);
-
       setTimeout(() => syncState({ trickFeedback: null }), 2500);
     }
   };
@@ -415,7 +572,6 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
-        // CORREÇÃO: Adiciona o ponto de penalidade para quem tomou o toco (loserId)
         gPoints[loserId] = (gPoints[loserId] || 0) + 1;
         updates = { gamePoints: gPoints, lives: 3 };
       }
@@ -432,10 +588,9 @@ export default function App() {
   };
 
   // ============================================================================
-  // 5. TELAS VISUAIS (SEU DESIGN ORIGINAL)
+  // 5. TELAS VISUAIS
   // ============================================================================
 
-  // TELA 1: LOGIN (Novo Sistema de PIN)
   if (!roomId) {
     return (
       <div
@@ -453,7 +608,6 @@ export default function App() {
           <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Entrar no Jogo
           </p>
-
           <input
             type="text"
             placeholder="Seu Nome ou Apelido"
@@ -461,26 +615,22 @@ export default function App() {
             onChange={(e) => setPlayerName(e.target.value)}
             className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-yellow-500 text-center font-bold"
           />
-
           {errorMsg && (
             <p className="text-red-400 text-sm mb-4 font-bold animate-pulse">
               {errorMsg}
             </p>
           )}
-
           <button
             onClick={createRoom}
             className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95"
           >
             CRIAR NOVA SALA
           </button>
-
           <div className="flex items-center gap-2 mb-6">
             <div className="h-px bg-white/20 flex-1"></div>
             <span className="text-xs text-gray-500 uppercase">Ou</span>
             <div className="h-px bg-white/20 flex-1"></div>
           </div>
-
           <div className="flex gap-2">
             <input
               type="number"
@@ -502,7 +652,6 @@ export default function App() {
     );
   }
 
-  // COMPONENTES DE CARTA (Seus Componentes Visuais)
   const EndGameMessage = () => {
     if (!roundResult) return null;
     const iAmWinner = me?.id === roundResult.winnerId;
@@ -556,12 +705,16 @@ export default function App() {
     return null;
   };
 
-  const CardFace = ({ card, playable, onClick }) => {
+  const CardFace = ({ card, playable, onClick, isHinted }) => {
     const isTrump = card.suit === trumpSuit;
     const opacityClass =
       localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
     const color = SUITS[card.suit].color;
     const sym = SUITS[card.suit].symbol;
+    const hintClass = isHinted
+      ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
+      : "";
+
     const renderCenter = () => {
       if (card.label === "A")
         return <div className="text-6xl md:text-7xl drop-shadow-md">{sym}</div>;
@@ -594,10 +747,11 @@ export default function App() {
       }
       return null;
     };
+
     return (
       <div
         onClick={() => playable && !localProcessing && onClick(card)}
-        className={`w-[72px] h-[104px] md:w-24 md:h-36 bg-gradient-to-br from-white to-gray-50 rounded-lg md:rounded-xl border border-gray-300 shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden ${opacityClass} ${
+        className={`w-[72px] h-[104px] md:w-24 md:h-36 bg-gradient-to-br from-white to-gray-50 rounded-lg md:rounded-xl border border-gray-300 shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden ${opacityClass} ${hintClass} ${
           playable && !localProcessing
             ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
             : ""
@@ -669,7 +823,6 @@ export default function App() {
     </div>
   );
 
-  // TELA 2: LOBBY DE ESPERA (Dentro da Sala com PIN)
   if (gameState === "lobby") {
     return (
       <div
@@ -682,7 +835,6 @@ export default function App() {
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
         </p>
-
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
@@ -690,7 +842,6 @@ export default function App() {
               {roomId}
             </span>
           </div>
-
           <p className="mt-6 mb-4 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Jogadores na Mesa
           </p>
@@ -705,7 +856,6 @@ export default function App() {
               </div>
             ))}
           </div>
-
           {me?.isHost && playersList.length >= 2 ? (
             <button
               onClick={startGameFirstTime}
@@ -725,7 +875,6 @@ export default function App() {
     );
   }
 
-  // TELA 3: JOGO PRINCIPAL
   const myHand = hands[me?.id] || [];
   const opponent = playersList.find((p) => p.id !== me?.id);
   const opHandCount = hands[opponent?.id]?.length || 0;
@@ -737,6 +886,19 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white"
       translate="no"
     >
+      {/* HEADER: BOTÃO DE DICA (Novo) */}
+      <div className="absolute top-4 right-4 z-50">
+        {gameState === "playing" && turn === me?.id && (
+          <button
+            onClick={generateHint}
+            className="bg-blue-600/80 backdrop-blur-sm border border-blue-400 text-white w-10 h-10 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.6)] flex items-center justify-center font-bold text-xl hover:bg-blue-500 transition-transform active:scale-90 animate-pulse"
+            title="Pedir uma dica"
+          >
+            💡
+          </button>
+        )}
+      </div>
+
       {/* PLACAR */}
       <div className="bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl h-24 flex w-full relative z-20">
         {playersList[0] && (
@@ -808,6 +970,25 @@ export default function App() {
         )}
       </div>
 
+      {/* BALÃO DE DICA (Flutuante no meio da tela) */}
+      {currentHint && (
+        <div className="absolute top-32 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
+          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
+            <button
+              onClick={() => setCurrentHint(null)}
+              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white"
+            >
+              X
+            </button>
+            <p className="text-sm md:text-base font-medium text-blue-50 leading-tight">
+              🤖 <strong>Dica do Bot:</strong>
+              <br />
+              {currentHint.text}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* MESA E BARALHO */}
       <div className="flex-1 flex flex-col items-center justify-center relative w-full">
         <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
@@ -873,7 +1054,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative">
         {showCards && (
           <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
-            {/* BOTÃO DA PILHA DISCRETO */}
             <button
               onClick={() => setShowHistory(true)}
               className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -910,6 +1090,7 @@ export default function App() {
                   card={card}
                   playable={turn === me?.id}
                   onClick={handleCardClick}
+                  isHinted={currentHint?.cardId === card.id}
                 />
               </div>
             ))}
