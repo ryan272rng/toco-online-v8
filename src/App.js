@@ -203,7 +203,7 @@ export default function App() {
   };
 
   // ============================================================================
-  // NOVO: O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco)
+  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco)
   // ============================================================================
   const generateHint = () => {
     if (!me?.id || turn !== me.id) return;
@@ -217,31 +217,34 @@ export default function App() {
     let bestCard = null;
     let explanation = "";
 
-    // Separar as cartas em grupos lógicos
+    // Separar as cartas em grupos lógicos (CORREÇÃO DO BUG 'c is not defined' aplicada aqui)
     const myTrumps = myHand
-      .filter((c) => c.suit === trumpSuit)
+      .filter((card) => card.suit === trumpSuit)
       .sort(
         (a, b) =>
           getCardPower(a, trumpSuit, trumpSuit) -
           getCardPower(b, trumpSuit, trumpSuit)
       );
-    const lowTrumps = myTrumps.filter((c) =>
-      ["Q", "J", "K", "4", "5", "6"].includes(c.label)
+    const lowTrumps = myTrumps.filter((card) =>
+      ["Q", "J", "K", "4", "5", "6"].includes(card.label)
     );
-    const highTrumps = myTrumps.filter((c) =>
-      ["A", "3", "7", "2"].includes(c.label)
+    const highTrumps = myTrumps.filter((card) =>
+      ["A", "3", "7", "2"].includes(card.label)
     );
+
     const myNonTrumps = myHand
-      .filter((c) => c.suit !== trumpSuit)
+      .filter((card) => card.suit !== trumpSuit)
       .sort(
         (a, b) =>
-          getCardPower(a, trumpSuit, c.suit) -
-          getCardPower(b, trumpSuit, c.suit)
+          getCardPower(a, trumpSuit, a.suit) -
+          getCardPower(b, trumpSuit, b.suit)
       );
-    const nonTrumpBiscas = myNonTrumps.filter((c) =>
-      ["A", "7"].includes(c.label)
+    const nonTrumpBiscas = myNonTrumps.filter((card) =>
+      ["A", "7"].includes(card.label)
     );
-    const cleanCards = myNonTrumps.filter((c) => !["A", "7"].includes(c.label)); // Limpos e figuras
+    const cleanCards = myNonTrumps.filter(
+      (card) => !["A", "7"].includes(card.label)
+    );
 
     // REGRA DE OURO: Tudo ou Nada (Se bater 31, joga!)
     if (!isFirstToPlay) {
@@ -270,17 +273,14 @@ export default function App() {
     if (isFirstToPlay) {
       // SOU O PRIMEIRO A JOGAR
       if (lowTrumps.length > 0) {
-        // Tática da Pescaria (Adicionado o K aqui tbm)
-        bestCard = lowTrumps[0]; // Menor trunfo
+        bestCard = lowTrumps[0]; // Menor trunfo (inclui o K)
         explanation =
           "Tática da Pescaria: Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
       } else if (cleanCards.length > 0) {
-        // Saída limpa comum
         bestCard = cleanCards[0];
         explanation =
           "Jogue um Limpo. Deixe a responsabilidade de gastar cartas boas para o oponente.";
       } else if (nonTrumpBiscas.length > 0) {
-        // Mão Biscada
         const sete = nonTrumpBiscas.find((c) => c.label === "7");
         if (sete) {
           bestCard = sete;
@@ -292,7 +292,6 @@ export default function App() {
             "Você só tem pedreira. Jogue e reze para ele não ter trunfo!";
         }
       } else {
-        // Só sobrou Trunfo Gigante
         bestCard = myHand[0];
         explanation = "Não tem jeito, você terá que gastar um trunfo grande.";
       }
@@ -312,7 +311,6 @@ export default function App() {
         );
 
       if (cardsOfLeadSuit.length > 0) {
-        // TENHO O NAIPE DA MESA (Incarte)
         const myBiscasOfSuit = cardsOfLeadSuit.filter((c) =>
           ["A", "7"].includes(c.label)
         );
@@ -327,14 +325,12 @@ export default function App() {
           explanation =
             "Incarte com Bisca! Roube os pontos que ele colocou na mesa.";
         } else {
-          bestCard = cardsOfLeadSuit[0]; // Joga a menor
+          bestCard = cardsOfLeadSuit[0];
           explanation =
             "Não vale a pena incartar gastando coisa boa se a mesa não tem pontos. Descarte a mais baixa.";
         }
       } else {
-        // NÃO TENHO O NAIPE (Corte ou Descarte)
         if (myTrumps.length > 0 && opPts >= 10 && !opIsTrump) {
-          // Corte de cartas valiosas
           if (lowTrumps.length > 0) {
             bestCard = lowTrumps[0];
             explanation =
@@ -350,12 +346,10 @@ export default function App() {
           opPts > 0 &&
           lowTrumps.length > 0
         ) {
-          // Cortar lixo com lixo
           bestCard = lowTrumps[0];
           explanation =
             "Mesa fraca. Use seu menor corte só para não perder a vez.";
         } else {
-          // Descarte (Jogar o lixo fora pq nao tem oq fazer ou pq ele jogou lixo)
           if (cleanCards.length > 0) {
             bestCard = cleanCards[0];
             explanation =
@@ -886,19 +880,6 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white"
       translate="no"
     >
-      {/* HEADER: BOTÃO DE DICA (Novo) */}
-      <div className="absolute top-4 right-4 z-50">
-        {gameState === "playing" && turn === me?.id && (
-          <button
-            onClick={generateHint}
-            className="bg-blue-600/80 backdrop-blur-sm border border-blue-400 text-white w-10 h-10 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.6)] flex items-center justify-center font-bold text-xl hover:bg-blue-500 transition-transform active:scale-90 animate-pulse"
-            title="Pedir uma dica"
-          >
-            💡
-          </button>
-        )}
-      </div>
-
       {/* PLACAR */}
       <div className="bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl h-24 flex w-full relative z-20">
         {playersList[0] && (
@@ -1053,20 +1034,42 @@ export default function App() {
       {/* MINHA MÃO E CONTROLES */}
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative">
         {showCards && (
-          <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
-            <button
-              onClick={() => setShowHistory(true)}
-              className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
-            >
-              <span className="text-2xl md:text-3xl drop-shadow-lg opacity-80">
-                🗂️
-              </span>
-              <span className="text-[10px] md:text-xs font-bold tracking-wider">
-                Pilha ({myTricks.length})
-              </span>
-            </button>
-          </div>
+          <>
+            {/* BOTÃO DA PILHA (Esquerda) */}
+            <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
+              <button
+                onClick={() => setShowHistory(true)}
+                className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
+              >
+                <span className="text-2xl md:text-3xl drop-shadow-lg opacity-80">
+                  🗂️
+                </span>
+                <span className="text-[10px] md:text-xs font-bold tracking-wider">
+                  Pilha ({myTricks.length})
+                </span>
+              </button>
+            </div>
+
+            {/* NOVO BOTÃO DA DICA (Direita, espelhado para facilitar o clique) */}
+            {turn === me?.id && (
+              <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
+                <button
+                  onClick={generateHint}
+                  className="text-yellow-400 hover:text-yellow-300 transition-all duration-200 flex flex-col items-center gap-1 active:scale-95 animate-pulse"
+                  title="Pedir uma dica"
+                >
+                  <span className="text-2xl md:text-3xl drop-shadow-lg opacity-90">
+                    💡
+                  </span>
+                  <span className="text-[10px] md:text-xs font-bold tracking-wider text-yellow-400">
+                    Dica
+                  </span>
+                </button>
+              </div>
+            )}
+          </>
         )}
+
         <div className="mb-4 h-10 flex items-center justify-center">
           {turn === me?.id ? (
             <span className="bg-yellow-400 text-black font-black px-8 py-2 md:py-3 rounded-full animate-pulse shadow-[0_0_25px_rgba(250,204,21,0.5)] border-2 border-white tracking-widest text-sm md:text-base uppercase cursor-default">
