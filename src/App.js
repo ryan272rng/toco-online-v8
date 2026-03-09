@@ -40,7 +40,7 @@ export default function App() {
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [currentHint, setCurrentHint] = useState(null); // Estado para guardar a dica atual
+  const [currentHint, setCurrentHint] = useState(null);
 
   // Referência para evitar bugs de lag
   const stateRef = useRef(roomData);
@@ -203,7 +203,7 @@ export default function App() {
   };
 
   // ============================================================================
-  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco)
+  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO)
   // ============================================================================
   const generateHint = () => {
     if (!me?.id || turn !== me.id) return;
@@ -217,7 +217,7 @@ export default function App() {
     let bestCard = null;
     let explanation = "";
 
-    // Separar as cartas em grupos lógicos (CORREÇÃO DO BUG 'c is not defined' aplicada aqui)
+    // Separar as cartas em grupos lógicos
     const myTrumps = myHand
       .filter((card) => card.suit === trumpSuit)
       .sort(
@@ -228,33 +228,20 @@ export default function App() {
     const lowTrumps = myTrumps.filter((card) =>
       ["Q", "J", "K", "4", "5", "6"].includes(card.label)
     );
-    const highTrumps = myTrumps.filter((card) =>
-      ["A", "3", "7", "2"].includes(card.label)
-    );
-
-    const myNonTrumps = myHand
-      .filter((card) => card.suit !== trumpSuit)
-      .sort(
-        (a, b) =>
-          getCardPower(a, trumpSuit, a.suit) -
-          getCardPower(b, trumpSuit, b.suit)
-      );
-    const nonTrumpBiscas = myNonTrumps.filter((card) =>
-      ["A", "7"].includes(card.label)
-    );
-    const cleanCards = myNonTrumps.filter(
-      (card) => !["A", "7"].includes(card.label)
+    const sortedHandByPtsAsc = [...myHand].sort(
+      (a, b) => getCardPoints(a, trumpSuit) - getCardPoints(b, trumpSuit)
     );
 
     // REGRA DE OURO: Tudo ou Nada (Se bater 31, joga!)
     if (!isFirstToPlay) {
-      const tablePoints = getCardPoints(tableCards[0].card, trumpSuit);
-      const leadSuit = tableCards[0].card.suit;
+      const opCard = tableCards[0].card;
+      const leadSuit = opCard.suit;
+      const tablePoints = getCardPoints(opCard, trumpSuit);
+      const opPower = getCardPower(opCard, trumpSuit, leadSuit);
 
       for (let card of myHand) {
         const cardPts = getCardPoints(card, trumpSuit);
         const cardPower = getCardPower(card, trumpSuit, leadSuit);
-        const opPower = getCardPower(tableCards[0].card, trumpSuit, leadSuit);
 
         // Se eu ganho a mão E a soma passa de 31
         if (
@@ -273,91 +260,72 @@ export default function App() {
     if (isFirstToPlay) {
       // SOU O PRIMEIRO A JOGAR
       if (lowTrumps.length > 0) {
-        bestCard = lowTrumps[0]; // Menor trunfo (inclui o K)
+        bestCard = lowTrumps[0]; // Menor trunfo para pescar
         explanation =
           "Tática da Pescaria: Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
-      } else if (cleanCards.length > 0) {
-        bestCard = cleanCards[0];
-        explanation =
-          "Jogue um Limpo. Deixe a responsabilidade de gastar cartas boas para o oponente.";
-      } else if (nonTrumpBiscas.length > 0) {
-        const sete = nonTrumpBiscas.find((c) => c.label === "7");
-        if (sete) {
-          bestCard = sete;
-          explanation =
-            "Mão Biscada! Sacrifique o 7 em vez do Ás, pois ele dá menos pontos caso você tome um corte.";
-        } else {
-          bestCard = nonTrumpBiscas[0];
-          explanation =
-            "Você só tem pedreira. Jogue e reze para ele não ter trunfo!";
-        }
       } else {
-        bestCard = myHand[0];
-        explanation = "Não tem jeito, você terá que gastar um trunfo grande.";
+        // Pega a carta da mão que dá MENOS PONTOS para o oponente
+        bestCard = sortedHandByPtsAsc[0];
+        const pts = getCardPoints(bestCard, trumpSuit);
+
+        if (pts === 0) {
+          explanation =
+            "Saída Segura: Jogue um Limpo para ver a reação do oponente.";
+        } else if (pts < 10) {
+          explanation =
+            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja o menor possível.";
+        } else {
+          explanation =
+            "Mão Biscada! Você só tem cartas valiosas. Sacrifique a de menor valor.";
+        }
       }
     } else {
       // SOU O SEGUNDO A JOGAR (Contra-ataque)
       const opCard = tableCards[0].card;
       const opPts = getCardPoints(opCard, trumpSuit);
       const leadSuit = opCard.suit;
-      const opIsTrump = opCard.suit === trumpSuit;
+      const opPower = getCardPower(opCard, trumpSuit, leadSuit);
 
-      const cardsOfLeadSuit = myHand
-        .filter((c) => c.suit === leadSuit)
-        .sort(
+      const winningCards = myHand.filter(
+        (c) => getCardPower(c, trumpSuit, leadSuit) > opPower
+      );
+      const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
+      const winningTrumps = winningCards.filter((c) => c.suit === trumpSuit);
+
+      // Se eu posso ganhar do mesmo naipe E a mesa tem algum ponto (mesmo que seja 2 pontos)
+      if (
+        winningLeadSuit.length > 0 &&
+        (opPts > 0 || getCardPoints(winningLeadSuit[0], trumpSuit) > 0)
+      ) {
+        // Escolhe a carta do naipe que me garante a maior pontuação
+        const bestWinningLead = [...winningLeadSuit].sort(
+          (a, b) => getCardPoints(b, trumpSuit) - getCardPoints(a, trumpSuit)
+        )[0];
+        bestCard = bestWinningLead;
+        explanation = `Incarte perfeito! Você ganha a mão e garante ${
+          opPts + getCardPoints(bestCard, trumpSuit)
+        } pontos.`;
+
+        // Se eu não tenho o naipe da mesa, mas tenho trunfo para cortar pontos (mesmo que poucos pontos)
+      } else if (winningTrumps.length > 0 && opPts > 0) {
+        // Escolhe o menor trunfo possível para não gastar os fortes à toa
+        const efficientCut = winningTrumps.sort(
           (a, b) =>
             getCardPower(a, trumpSuit, leadSuit) -
             getCardPower(b, trumpSuit, leadSuit)
-        );
+        )[0];
+        bestCard = efficientCut;
+        explanation = `Corte! A carta dele vale ${opPts} pontos. Use seu trunfo para roubar!`;
 
-      if (cardsOfLeadSuit.length > 0) {
-        const myBiscasOfSuit = cardsOfLeadSuit.filter((c) =>
-          ["A", "7"].includes(c.label)
-        );
-        const winningBiscas = myBiscasOfSuit.filter(
-          (c) =>
-            getCardPower(c, trumpSuit, leadSuit) >
-            getCardPower(opCard, trumpSuit, leadSuit)
-        );
-
-        if (winningBiscas.length > 0 && opPts > 0) {
-          bestCard = winningBiscas[0];
-          explanation =
-            "Incarte com Bisca! Roube os pontos que ele colocou na mesa.";
-        } else {
-          bestCard = cardsOfLeadSuit[0];
-          explanation =
-            "Não vale a pena incartar gastando coisa boa se a mesa não tem pontos. Descarte a mais baixa.";
-        }
+        // Se não dá para ganhar OU se a mesa tem 0 pontos e não quero gastar carta à toa
       } else {
-        if (myTrumps.length > 0 && opPts >= 10 && !opIsTrump) {
-          if (lowTrumps.length > 0) {
-            bestCard = lowTrumps[0];
-            explanation =
-              "Corte Perfeito! Use um trunfo baixo para roubar os pontos altos dele.";
-          } else {
-            bestCard = myTrumps[0];
-            explanation =
-              "Vale a pena gastar esse trunfo alto para garantir esses pontos.";
-          }
-        } else if (
-          myTrumps.length > 0 &&
-          opPts < 10 &&
-          opPts > 0 &&
-          lowTrumps.length > 0
-        ) {
-          bestCard = lowTrumps[0];
+        bestCard = sortedHandByPtsAsc[0]; // Pega a carta que dá o menor prejuízo
+        if (getCardPoints(bestCard, trumpSuit) === 0) {
           explanation =
-            "Mesa fraca. Use seu menor corte só para não perder a vez.";
+            "Você não consegue vencer (ou não vale a pena). Jogue um Limpo para não dar pontos a ele.";
         } else {
-          if (cleanCards.length > 0) {
-            bestCard = cleanCards[0];
-            explanation =
-              "Descarte. Não gaste trunfo em mesa sem ponto. Entregue um Limpo para ele.";
-          } else {
-            bestCard = myHand[0];
-            explanation = "Situação difícil. Jogue a de menor valor.";
-          }
+          explanation =
+            "Você vai perder esta mão. Jogue a carta de MENOR valor para o prejuízo ser pequeno.";
         }
       }
     }
@@ -591,8 +559,12 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
-          ♦️ TOCO ♣️
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate">
+          <span className="text-yellow-400">♦️</span>
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
+            TOCO
+          </span>
+          <span className="text-yellow-500">♣️</span>
         </h1>
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
@@ -823,8 +795,12 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
         translate="no"
       >
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-2xl tracking-tighter notranslate">
-          ♦️ TOCO ♣️
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate">
+          <span className="text-yellow-400">♦️</span>
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
+            TOCO
+          </span>
+          <span className="text-yellow-500">♣️</span>
         </h1>
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
@@ -1050,7 +1026,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* NOVO BOTÃO DA DICA (Direita, espelhado para facilitar o clique) */}
+            {/* NOVO BOTÃO DA DICA (Direita, agora fácil de clicar!) */}
             {turn === me?.id && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
                 <button
