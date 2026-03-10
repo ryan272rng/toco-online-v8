@@ -3,13 +3,38 @@ import { database } from "./firebase";
 import { ref, onValue, set, update, get, remove } from "firebase/database";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (NOVO SISTEMA DE CORES)
 // ============================================================================
+// Usando caracteres puros (sem \uFE0F) para evitar renderização 3D de emoji
 const SUITS = {
-  hearts: { symbol: "♥️", color: "text-red-600", name: "Copas" },
-  diamonds: { symbol: "♦", color: "text-red-600", name: "Ouros" },
-  clubs: { symbol: "♣", color: "text-slate-900", name: "Paus" },
-  spades: { symbol: "♠️", color: "text-slate-900", name: "Espadas" },
+  hearts: {
+    symbol: "♥",
+    defaultColor: "text-red-600",
+    darkColor: "text-red-400",
+    luxoColor: "text-red-500",
+    name: "Copas",
+  },
+  diamonds: {
+    symbol: "♦",
+    defaultColor: "text-red-600",
+    darkColor: "text-red-400",
+    luxoColor: "text-red-500",
+    name: "Ouros",
+  },
+  clubs: {
+    symbol: "♣",
+    defaultColor: "text-slate-900",
+    darkColor: "text-white",
+    luxoColor: "text-yellow-400",
+    name: "Paus",
+  },
+  spades: {
+    symbol: "♠",
+    defaultColor: "text-slate-900",
+    darkColor: "text-white",
+    luxoColor: "text-yellow-400",
+    name: "Espadas",
+  },
 };
 
 const RANKS = [
@@ -29,7 +54,7 @@ const POINTS_GOAL = 31;
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS DO FIREBASE, LOBBY E SINGLE PLAYER
+  // 2. ESTADOS DO FIREBASE E SINGLE PLAYER
   // ============================================================================
   const [playerName, setPlayerName] = useState("");
   const [pinInput, setPinInput] = useState("");
@@ -37,7 +62,9 @@ export default function App() {
   const [me, setMe] = useState(null);
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [isSinglePlayer, setIsSinglePlayer] = useState(false); // NOVO: Controle Offline
+
+  const [isSinglePlayer, setIsSinglePlayer] = useState(false);
+  const isOfflineRef = useRef(false);
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -79,9 +106,6 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // ============================================================================
-  // Referência do Estado para os Temporizadores do Bot
-  // ============================================================================
   const stateRef = useRef(roomData);
   useEffect(() => {
     stateRef.current = roomData;
@@ -92,21 +116,18 @@ export default function App() {
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. FUNÇÕES DE REDE, LOBBY E JOGAR SOZINHO
+  // 3. LÓGICA DE REDE E OFFLINE
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
 
-  // Função Universal para atualizar dados (Online ou Offline)
   const syncState = (updates) => {
-    if (isSinglePlayer) {
-      // Offline: Atualiza o React state direto e a Referência para o Bot não ler dados velhos
+    if (isOfflineRef.current) {
       setRoomData((prev) => {
         const newData = { ...prev, ...updates };
         stateRef.current = newData;
         return newData;
       });
     } else {
-      // Online: Manda pro Firebase
       if (!roomId) return;
       update(ref(database, `rooms/${roomId}`), updates);
     }
@@ -135,6 +156,7 @@ export default function App() {
     };
 
     setIsSinglePlayer(false);
+    isOfflineRef.current = false;
     await set(ref(database, `rooms/${newPin}`), initialRoomData);
     setMe(newMe);
     setRoomId(newPin);
@@ -152,6 +174,7 @@ export default function App() {
       const myId = `player_${Date.now()}`;
       const newMe = { id: myId, name: playerName, isHost: false };
       setIsSinglePlayer(false);
+      isOfflineRef.current = false;
       await update(ref(database, `rooms/${pinInput}/players`), {
         [myId]: newMe,
       });
@@ -168,7 +191,6 @@ export default function App() {
     }
   };
 
-  // NOVO: INICIAR MODO OFFLINE
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
 
@@ -179,13 +201,14 @@ export default function App() {
 
     setMe(newMe);
     setIsSinglePlayer(true);
-    setRoomId("SINGLE"); // Fura o bloqueio da tela inicial
+    isOfflineRef.current = true;
+    setRoomId("SINGLE");
 
     const initialRoomData = {
-      gameState: "lobby",
+      gameState: "choose_trump",
       hostId: myId,
       players: { [myId]: newMe, [botId]: botPlayer },
-      deck: [],
+      deck: createDeepShuffleDeck(),
       tableCards: [],
       trumpSuit: null,
       turn: null,
@@ -199,26 +222,10 @@ export default function App() {
 
     setRoomData(initialRoomData);
     stateRef.current = initialRoomData;
-
-    // Simula o clique do Host para iniciar o jogo imediatamente
-    setTimeout(() => {
-      const rScores = { [myId]: 0, [botId]: 0 };
-      syncState({
-        deck: createDeepShuffleDeck(),
-        roundScores: rScores,
-        tableCards: [],
-        trickFeedback: null,
-        roundResult: null,
-        trickHistory: [],
-        hands: {},
-        gameState: "choose_trump",
-      });
-    }, 500);
   };
 
-  // Listener do Firebase (Desativado no modo Single Player)
   useEffect(() => {
-    if (!roomId || isSinglePlayer) return;
+    if (!roomId || isOfflineRef.current) return;
     const roomRef = ref(database, `rooms/${roomId}`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -229,10 +236,10 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [roomId, isSinglePlayer]);
+  }, [roomId]);
 
   // ============================================================================
-  // 4. LÓGICA DE PODER E CÉREBRO (COMPARTILHADO PARA DICAS E PARA O BOT)
+  // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
   const playersList = roomData?.players ? Object.values(roomData.players) : [];
   const gameState = roomData?.gameState || "lobby";
@@ -299,7 +306,6 @@ export default function App() {
     return 0;
   };
 
-  // Função pura: Retorna a melhor carta (Usada pelas Dicas E pelo Bot)
   const getBestCardToPlay = (
     playerId,
     currentHand,
@@ -322,7 +328,6 @@ export default function App() {
       (a, b) => getCardPoints(a, currentTrump) - getCardPoints(b, currentTrump)
     );
 
-    // Tudo ou Nada
     if (!isFirstToPlay) {
       const opCard = currentTable[0].card;
       const leadSuit = opCard.suit;
@@ -416,15 +421,18 @@ export default function App() {
           getCardPower(tableCards[0].card, trumpSuit, leadSuit)
       ) {
         if (leadSuit === trumpSuit)
-          explanation = `Corte! Você tem um trunfo maior. Roube os pontos da mesa.`;
+          explanation =
+            "Corte! Você tem um trunfo maior. Roube os pontos da mesa.";
         else
-          explanation = `Encarte! Jogue uma carta maior do mesmo naipe e garanta os pontos.`;
+          explanation =
+            "Encarte! Jogue uma carta maior do mesmo naipe e garanta os pontos.";
       } else if (
         bestCard.suit === trumpSuit &&
         getCardPower(bestCard, trumpSuit, leadSuit) >
           getCardPower(tableCards[0].card, trumpSuit, leadSuit)
       ) {
-        explanation = `Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.`;
+        explanation =
+          "Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.";
       } else {
         if (getCardPoints(bestCard, trumpSuit) === 0)
           explanation =
@@ -437,33 +445,28 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
-  // ============================================================================
-  // LÓGICA DO COMPUTADOR JOGANDO (SINGLE PLAYER)
-  // ============================================================================
-
   // Bot Escolhe o Trunfo
   useEffect(() => {
-    if (!isSinglePlayer || gameState !== "choose_trump") return;
+    if (!isOfflineRef.current || gameState !== "choose_trump") return;
     const bot = playersList.find((p) => p.id !== me?.id);
     if (bot && tocoTarget === bot.id) {
       const timer = setTimeout(() => {
         const suits = Object.keys(SUITS);
         const randomSuit = suits[Math.floor(Math.random() * suits.length)];
         syncState({ trumpSuit: randomSuit, gameState: "dealing" });
-      }, 1500); // 1.5s de tempo de pensamento
+      }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, tocoTarget, isSinglePlayer]);
+  }, [gameState, tocoTarget]);
 
   // Bot Joga a Carta
   useEffect(() => {
-    if (!isSinglePlayer || gameState !== "playing") return;
+    if (!isOfflineRef.current || gameState !== "playing") return;
     const bot = playersList.find((p) => p.id !== me?.id);
 
     if (bot && turn === bot.id) {
       const timer = setTimeout(() => {
         const botId = bot.id;
-        // Usamos stateRef para garantir que o bot está olhando para a mesa ATUALIZADA
         const currentHands = stateRef.current?.hands || {};
         const botHand = currentHands[botId] || [];
         if (botHand.length === 0) return;
@@ -485,7 +488,7 @@ export default function App() {
           ];
           let nextTurn = turn;
           if (newTable.length < playersList.length) {
-            nextTurn = me.id; // Passa a vez para o jogador real
+            nextTurn = me.id;
           }
 
           syncState({
@@ -494,14 +497,11 @@ export default function App() {
             turn: nextTurn,
           });
         }
-      }, 1800); // 1.8s simulando o computador raciocinando
+      }, 1800);
       return () => clearTimeout(timer);
     }
-  }, [turn, gameState, isSinglePlayer, tableCards.length]);
+  }, [turn, gameState, tableCards.length]);
 
-  // ============================================================================
-  // FLUXO DE JOGO E RODADAS
-  // ============================================================================
   const createDeepShuffleDeck = () => {
     let newDeck = [];
     Object.keys(SUITS).forEach((suitKey) => {
@@ -721,22 +721,18 @@ export default function App() {
   // 5. TELAS VISUAIS
   // ============================================================================
 
-  // --- TELA INICIAL (Login e Menu) ---
   if (!roomId) {
     return (
       <div
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
         translate="no"
       >
-        {/* BOTÃO DE CONFIGURAÇÕES */}
         <button
           onClick={() => setShowSettings(true)}
           className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
         >
           ⚙️
         </button>
-
-        {/* MODAL DE CONFIGURAÇÕES */}
         {showSettings && (
           <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
@@ -751,7 +747,6 @@ export default function App() {
                   &times;
                 </button>
               </div>
-
               <div className="flex flex-col gap-5">
                 <label className="flex justify-between items-center text-white font-medium">
                   <span>💾 Lembrar meu Nome</span>
@@ -790,24 +785,27 @@ export default function App() {
                     className="w-6 h-6"
                   />
                 </label>
-                <div className="text-white font-medium border-t border-white/10 pt-4 opacity-50">
-                  <span className="mb-2 block">
-                    🃏 Estilo do Baralho (Em breve)
-                  </span>
+                <div className="text-white font-medium border-t border-white/10 pt-4">
+                  <span className="mb-2 block">🃏 Estilo do Baralho</span>
                   <select
-                    disabled
-                    className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm"
+                    value={settings.deckStyle}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        deckStyle: e.target.value,
+                      }))
+                    }
+                    className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
                   >
-                    <option>Padrão (Branco)</option>
-                    <option>Modo Dark (Noturno)</option>
-                    <option>Cassino (Luxo)</option>
+                    <option value="default">Padrão (Branco)</option>
+                    <option value="dark">Modo Dark (Noturno)</option>
+                    <option value="luxo">Cassino (Luxo)</option>
                   </select>
                 </div>
               </div>
             </div>
           </div>
         )}
-
         <div className="w-full max-w-sm flex flex-col items-center pt-8 md:pt-12 pb-24">
           <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
             <span className="font-sans" style={{ color: "#facc15" }}>
@@ -823,7 +821,6 @@ export default function App() {
           <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
             Desenvolvido por Ryan Kilberth
           </p>
-
           <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl">
             <input
               type="text"
@@ -832,21 +829,17 @@ export default function App() {
               onChange={(e) => setPlayerName(e.target.value)}
               className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-4 mb-6 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
             />
-
             {errorMsg && (
               <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
                 {errorMsg}
               </p>
             )}
-
-            {/* BOTÃO JOGAR SOZINHO ATIVADO */}
             <button
               onClick={startSinglePlayer}
               className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
             >
               <span className="text-xl">🤖</span> JOGAR SOZINHO
             </button>
-
             <div className="flex items-center gap-2 mb-6">
               <div className="h-px bg-white/20 flex-1"></div>
               <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
@@ -854,14 +847,12 @@ export default function App() {
               </span>
               <div className="h-px bg-white/20 flex-1"></div>
             </div>
-
             <button
               onClick={createRoom}
               className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
             >
               CRIAR NOVA SALA
             </button>
-
             <div className="flex gap-2">
               <input
                 type="number"
@@ -884,7 +875,6 @@ export default function App() {
     );
   }
 
-  // --- COMPONENTES DA MESA DE JOGO ---
   const EndGameMessage = () => {
     if (!roundResult) return null;
     const iAmWinner = me?.id === roundResult.winnerId;
@@ -938,27 +928,39 @@ export default function App() {
   };
 
   const CardFace = ({ card, playable, onClick, isHinted }) => {
+    const { deckStyle } = settings;
+    const suitDef = SUITS[card.suit];
     const isTrump = card.suit === trumpSuit;
     const opacityClass =
       localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
-    const sym =
-      card.suit === "diamonds"
-        ? "♦"
-        : card.suit === "clubs"
-        ? "♣"
-        : SUITS[card.suit].symbol;
-    const color = SUITS[card.suit].color;
     const hintClass = isHinted
       ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
       : "";
 
+    // Lógica das Cores dos Temas
+    let cardBg = "bg-gradient-to-br from-white to-gray-50";
+    let cardBorder = "border-gray-300";
+    let cardTextColor = suitDef.defaultColor;
+
+    if (deckStyle === "dark") {
+      cardBg = "bg-gradient-to-br from-gray-800 to-gray-900";
+      cardBorder = "border-gray-600";
+      cardTextColor = suitDef.darkColor;
+    } else if (deckStyle === "luxo") {
+      cardBg = "bg-gradient-to-br from-black to-slate-950";
+      cardBorder = "border-yellow-600/50";
+      cardTextColor = suitDef.luxoColor;
+    }
+
     const renderCenter = () => {
+      // Emojis menores para não poluir
       if (card.label === "K")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
+        return <div className="text-3xl md:text-4xl drop-shadow-sm">🤴</div>;
       if (card.label === "Q")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
+        return <div className="text-3xl md:text-4xl drop-shadow-sm">👸</div>;
       if (card.label === "J")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
+        return <div className="text-3xl md:text-4xl drop-shadow-sm">💂</div>;
+
       const num = parseInt(card.label);
       if (!isNaN(num)) {
         let grid = "grid-cols-1";
@@ -966,7 +968,7 @@ export default function App() {
         if (num >= 7) grid = "grid-cols-3";
         return (
           <div
-            className={`grid ${grid} gap-1 items-center justify-items-center h-full py-1 w-full px-1.5`}
+            className={`grid ${grid} gap-1 items-center justify-items-center h-full w-full px-1.5 ${cardTextColor}`}
           >
             {Array.from({ length: num }).map((_, i) => (
               <span
@@ -975,15 +977,17 @@ export default function App() {
                   i >= Math.ceil(num / 2) ? "rotate-180" : ""
                 }`}
               >
-                {sym}
+                {suitDef.symbol}
               </span>
             ))}
           </div>
         );
       }
       return (
-        <div className="text-5xl md:text-6xl drop-shadow-sm font-sans">
-          {sym}
+        <div
+          className={`text-5xl md:text-6xl drop-shadow-sm font-sans ${cardTextColor}`}
+        >
+          {suitDef.symbol}
         </div>
       );
     };
@@ -991,40 +995,45 @@ export default function App() {
     return (
       <div
         onClick={() => playable && !localProcessing && onClick(card)}
-        className={`w-[72px] h-[104px] md:w-24 md:h-36 bg-gradient-to-br from-white to-gray-50 rounded-lg md:rounded-xl border border-gray-300 shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-2 ${opacityClass} ${hintClass} ${
+        className={`w-[72px] h-[104px] md:w-24 md:h-36 ${cardBg} rounded-lg md:rounded-xl border ${cardBorder} shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-1.5 md:p-2 ${opacityClass} ${hintClass} ${
           playable && !localProcessing
             ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
             : ""
         }`}
       >
-        <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans">
-          {sym}
-        </div>
         <div
-          className={`absolute top-1 left-1.5 flex flex-col items-center leading-none ${color} z-10`}
+          className={`absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans ${cardTextColor}`}
         >
-          <span className="font-bold text-[13px] md:text-sm tracking-tighter">
+          {suitDef.symbol}
+        </div>
+
+        {/* Cantos mais afastados do centro e menores */}
+        <div
+          className={`absolute top-1 left-1.5 flex flex-col items-center justify-center ${cardTextColor} z-10`}
+        >
+          <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
             {card.label}
           </span>
-          <span className="text-[10px] md:text-xs -mt-0.5 font-sans">
-            {sym}
+          <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
+            {suitDef.symbol}
           </span>
         </div>
-        <div
-          className={`flex-1 flex items-center justify-center w-full mt-2.5 mb-1 ${color}`}
-        >
+
+        <div className="flex-1 flex items-center justify-center w-full mt-3 mb-2 px-1 z-10">
           {renderCenter()}
         </div>
+
         <div
-          className={`absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180 ${color} z-10`}
+          className={`absolute bottom-1 right-1.5 flex flex-col items-center justify-center rotate-180 ${cardTextColor} z-10`}
         >
-          <span className="font-bold text-[13px] md:text-sm tracking-tighter">
+          <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
             {card.label}
           </span>
-          <span className="text-[10px] md:text-xs -mt-0.5 font-sans">
-            {sym}
+          <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
+            {suitDef.symbol}
           </span>
         </div>
+
         {isTrump && (
           <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
             <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
@@ -1035,26 +1044,32 @@ export default function App() {
   };
 
   const MiniCard = ({ card }) => {
-    const sym =
-      card.suit === "diamonds"
-        ? "♦"
-        : card.suit === "clubs"
-        ? "♣"
-        : SUITS[card.suit].symbol;
+    const { deckStyle } = settings;
+    const suitDef = SUITS[card.suit];
+    let textColor = suitDef.defaultColor;
+    let bgClass = "bg-white border-gray-300";
+    if (deckStyle === "dark") {
+      textColor = suitDef.darkColor;
+      bgClass = "bg-gray-800 border-gray-600";
+    } else if (deckStyle === "luxo") {
+      textColor = suitDef.luxoColor;
+      bgClass = "bg-black border-yellow-600/50";
+    }
+
     return (
-      <div className="relative w-10 h-14 bg-white rounded border border-gray-300 shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl font-sans">
-          {sym}
-        </div>
-        <span
-          className={`text-xs font-bold leading-none z-10 ${
-            SUITS[card.suit].color
-          }`}
+      <div
+        className={`relative w-10 h-14 ${bgClass} rounded border shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden`}
+      >
+        <div
+          className={`absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl font-sans ${textColor}`}
         >
+          {suitDef.symbol}
+        </div>
+        <span className={`text-xs font-bold leading-none z-10 ${textColor}`}>
           {card.label}
         </span>
-        <span className={`text-xl z-10 ${SUITS[card.suit].color} font-sans`}>
-          {sym}
+        <span className={`text-xl z-10 font-sans ${textColor}`}>
+          {suitDef.symbol}
         </span>
       </div>
     );
@@ -1075,20 +1090,7 @@ export default function App() {
     </div>
   );
 
-  // --- TELA DE LOBBY CORRIGIDA (Bug Resolvido) ---
   if (gameState === "lobby") {
-    // Se for modo Offline, exibe uma tela rápida de carregamento e o jogo começa sozinho.
-    if (isSinglePlayer) {
-      return (
-        <div className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4">
-          <div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-yellow-400 font-bold uppercase tracking-widest animate-pulse">
-            Iniciando Partida Local...
-          </p>
-        </div>
-      );
-    }
-
     return (
       <div
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
@@ -1114,7 +1116,6 @@ export default function App() {
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
         </p>
-
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
@@ -1166,7 +1167,6 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white"
       translate="no"
     >
-      {/* PLACAR */}
       <div className="bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl h-24 flex w-full relative z-20">
         {playersList[0] && (
           <div
@@ -1241,7 +1241,6 @@ export default function App() {
         )}
       </div>
 
-      {/* BALÃO DE DICA DIRETO */}
       {currentHint && (
         <div className="absolute top-32 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -1258,7 +1257,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MESA E BARALHO */}
       <div className="flex-1 flex flex-col items-center justify-center relative w-full">
         <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
           {showCards &&
@@ -1283,12 +1281,8 @@ export default function App() {
           )}
           {trumpSuit && (
             <div className="w-10 h-10 md:w-14 md:h-14 bg-white rounded-full border-4 border-yellow-500 flex items-center justify-center text-xl md:text-3xl shadow-[0_0_15px_rgba(250,204,21,0.5)]">
-              <span className={`${SUITS[trumpSuit].color} font-sans`}>
-                {SUITS[trumpSuit].symbol === "♦️"
-                  ? "♦"
-                  : SUITS[trumpSuit].symbol === "♣️"
-                  ? "♣"
-                  : SUITS[trumpSuit].symbol}
+              <span className={`${SUITS[trumpSuit].defaultColor} font-sans`}>
+                {SUITS[trumpSuit].symbol}
               </span>
             </div>
           )}
@@ -1302,7 +1296,9 @@ export default function App() {
               >
                 <CardFace card={tc.card} playable={false} />
                 <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                  {playersList.find((p) => p.id === tc.playerId)?.name}
+                  {playersList.find((p) => p.id === tc.playerId)?.id === "bot_1"
+                    ? "Computador"
+                    : playersList.find((p) => p.id === tc.playerId)?.name}
                 </span>
               </div>
             ))}
@@ -1313,7 +1309,9 @@ export default function App() {
                 VENCEU A MÃO
               </p>
               <p className="text-2xl md:text-3xl font-black text-blue-900 mb-2">
-                {trickFeedback.winnerName}
+                {trickFeedback.winnerName === "Computador"
+                  ? "🤖 Computador"
+                  : trickFeedback.winnerName}
               </p>
               <span className="inline-block bg-green-100 text-green-700 font-extrabold px-3 py-1 rounded-full text-base md:text-lg border border-green-300">
                 +{trickFeedback.pts} pts
@@ -1323,7 +1321,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* MINHA MÃO E CONTROLES */}
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
@@ -1340,7 +1337,6 @@ export default function App() {
                 </span>
               </button>
             </div>
-
             {turn === me?.id && settings.showHints && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
                 <button
@@ -1391,7 +1387,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* MODAL: ESCOLHA DE TRUNFO */}
       {gameState === "choose_trump" && (
         <div className="absolute inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           {tocoTarget === me?.id ? (
@@ -1410,12 +1405,10 @@ export default function App() {
                     onClick={() => confirmTrumpAndDeal(s)}
                     className="group border-2 border-gray-100 p-6 rounded-2xl hover:bg-yellow-50 hover:border-yellow-400 flex flex-col items-center transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md bg-gray-50 overflow-visible"
                   >
-                    <span className="text-5xl mb-3 group-hover:scale-125 transition-transform duration-200 font-sans">
-                      {SUITS[s].symbol === "♦️"
-                        ? "♦"
-                        : SUITS[s].symbol === "♣️"
-                        ? "♣"
-                        : SUITS[s].symbol}
+                    <span
+                      className={`${SUITS[s].defaultColor} text-5xl mb-3 group-hover:scale-125 transition-transform duration-200 font-sans`}
+                    >
+                      {SUITS[s].symbol}
                     </span>
                     <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase tracking-widest">
                       {SUITS[s].name}
@@ -1440,7 +1433,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: HISTÓRICO DA PILHA */}
       {showHistory && (
         <div className="absolute inset-0 bg-black/95 z-[60] flex flex-col items-center p-6 overflow-y-auto backdrop-blur-md">
           <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4 z-10">
@@ -1487,7 +1479,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: FIM DE RODADA */}
       {gameState === "round_end" && (
         <div className="absolute inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-gradient-to-br from-gray-900 to-black p-1 rounded-3xl shadow-[0_0_80px_rgba(234,179,8,0.4)] max-w-sm w-full border border-gray-700">
