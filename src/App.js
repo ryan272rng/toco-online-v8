@@ -7,8 +7,8 @@ import { ref, onValue, set, update, get, remove } from "firebase/database";
 // ============================================================================
 const SUITS = {
   hearts: { symbol: "♥️", color: "text-red-600", name: "Copas" },
-  diamonds: { symbol: "♦", color: "text-red-600", name: "Ouros" }, // Removido emoji selector para aceitar cor dourada no título
-  clubs: { symbol: "♣", color: "text-slate-900", name: "Paus" }, // Removido emoji selector
+  diamonds: { symbol: "♦", color: "text-red-600", name: "Ouros" },
+  clubs: { symbol: "♣", color: "text-slate-900", name: "Paus" },
   spades: { symbol: "♠️", color: "text-slate-900", name: "Espadas" },
 };
 
@@ -29,34 +29,88 @@ const POINTS_GOAL = 31;
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS DO FIREBASE E LOBBY (SISTEMA DE PIN)
+  // 2. ESTADOS DO FIREBASE, LOBBY E SINGLE PLAYER
   // ============================================================================
   const [playerName, setPlayerName] = useState("");
   const [pinInput, setPinInput] = useState("");
   const [roomId, setRoomId] = useState(null);
-  const [me, setMe] = useState(null); // { id, name, isHost }
+  const [me, setMe] = useState(null);
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isSinglePlayer, setIsSinglePlayer] = useState(false); // NOVO: Controle Offline
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
 
-  // Referência para evitar bugs de lag
+  // ============================================================================
+  // ESTADOS DE CONFIGURAÇÃO (Salvos no celular)
+  // ============================================================================
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem("tocoSettings");
+    return saved
+      ? JSON.parse(saved)
+      : {
+          sound: true,
+          vibration: true,
+          showHints: true,
+          saveName: false,
+          deckStyle: "default",
+        };
+  });
+
+  useEffect(() => {
+    localStorage.setItem("tocoSettings", JSON.stringify(settings));
+    if (settings.saveName && playerName.trim()) {
+      localStorage.setItem("tocoPlayerName", playerName);
+    } else if (!settings.saveName) {
+      localStorage.removeItem("tocoPlayerName");
+    }
+  }, [settings, playerName]);
+
+  useEffect(() => {
+    if (settings.saveName) {
+      const savedName = localStorage.getItem("tocoPlayerName");
+      if (savedName) setPlayerName(savedName);
+    }
+  }, []);
+
+  const toggleSetting = (key) =>
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // ============================================================================
+  // Referência do Estado para os Temporizadores do Bot
+  // ============================================================================
   const stateRef = useRef(roomData);
   useEffect(() => {
     stateRef.current = roomData;
   }, [roomData]);
 
-  // Limpa a dica quando a mesa muda
   useEffect(() => {
     setCurrentHint(null);
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. FUNÇÕES DE REDE E LOBBY
+  // 3. FUNÇÕES DE REDE, LOBBY E JOGAR SOZINHO
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  // Função Universal para atualizar dados (Online ou Offline)
+  const syncState = (updates) => {
+    if (isSinglePlayer) {
+      // Offline: Atualiza o React state direto e a Referência para o Bot não ler dados velhos
+      setRoomData((prev) => {
+        const newData = { ...prev, ...updates };
+        stateRef.current = newData;
+        return newData;
+      });
+    } else {
+      // Online: Manda pro Firebase
+      if (!roomId) return;
+      update(ref(database, `rooms/${roomId}`), updates);
+    }
+  };
 
   const createRoom = async () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
@@ -80,6 +134,7 @@ export default function App() {
       trickHistory: [],
     };
 
+    setIsSinglePlayer(false);
     await set(ref(database, `rooms/${newPin}`), initialRoomData);
     setMe(newMe);
     setRoomId(newPin);
@@ -96,18 +151,16 @@ export default function App() {
     if (snapshot.exists()) {
       const myId = `player_${Date.now()}`;
       const newMe = { id: myId, name: playerName, isHost: false };
-
+      setIsSinglePlayer(false);
       await update(ref(database, `rooms/${pinInput}/players`), {
         [myId]: newMe,
       });
-
       await update(ref(database, `rooms/${pinInput}/roundScores`), {
         [myId]: 0,
       });
       await update(ref(database, `rooms/${pinInput}/gamePoints`), {
         [myId]: 0,
       });
-
       setMe(newMe);
       setRoomId(pinInput);
     } else {
@@ -115,8 +168,57 @@ export default function App() {
     }
   };
 
+  // NOVO: INICIAR MODO OFFLINE
+  const startSinglePlayer = () => {
+    if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
+
+    const myId = `player_${Date.now()}`;
+    const botId = `bot_1`;
+    const newMe = { id: myId, name: playerName, isHost: true };
+    const botPlayer = { id: botId, name: "Computador", isHost: false };
+
+    setMe(newMe);
+    setIsSinglePlayer(true);
+    setRoomId("SINGLE"); // Fura o bloqueio da tela inicial
+
+    const initialRoomData = {
+      gameState: "lobby",
+      hostId: myId,
+      players: { [myId]: newMe, [botId]: botPlayer },
+      deck: [],
+      tableCards: [],
+      trumpSuit: null,
+      turn: null,
+      hands: {},
+      roundScores: { [myId]: 0, [botId]: 0 },
+      gamePoints: { [myId]: 0, [botId]: 0 },
+      tocoTarget: myId,
+      lives: 3,
+      trickHistory: [],
+    };
+
+    setRoomData(initialRoomData);
+    stateRef.current = initialRoomData;
+
+    // Simula o clique do Host para iniciar o jogo imediatamente
+    setTimeout(() => {
+      const rScores = { [myId]: 0, [botId]: 0 };
+      syncState({
+        deck: createDeepShuffleDeck(),
+        roundScores: rScores,
+        tableCards: [],
+        trickFeedback: null,
+        roundResult: null,
+        trickHistory: [],
+        hands: {},
+        gameState: "choose_trump",
+      });
+    }, 500);
+  };
+
+  // Listener do Firebase (Desativado no modo Single Player)
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || isSinglePlayer) return;
     const roomRef = ref(database, `rooms/${roomId}`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -127,15 +229,10 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [roomId]);
-
-  const syncState = (updates) => {
-    if (!roomId) return;
-    update(ref(database, `rooms/${roomId}`), updates);
-  };
+  }, [roomId, isSinglePlayer]);
 
   // ============================================================================
-  // 4. LÓGICA DO JOGO
+  // 4. LÓGICA DE PODER E CÉREBRO (COMPARTILHADO PARA DICAS E PARA O BOT)
   // ============================================================================
   const playersList = roomData?.players ? Object.values(roomData.players) : [];
   const gameState = roomData?.gameState || "lobby";
@@ -202,128 +299,209 @@ export default function App() {
     return 0;
   };
 
-  // ============================================================================
-  // O "CÉREBRO" DE DICAS (Inteligência Artificial do Toco - ATUALIZADO)
-  // ============================================================================
-  const generateHint = () => {
-    if (!me?.id || turn !== me.id) return;
-
-    const myHand = hands[me.id] || [];
-    if (myHand.length === 0) return;
-
-    const myCurrentScore = roundScores[me.id] || 0;
-    const isFirstToPlay = tableCards.length === 0;
-
-    let bestCard = null;
-    let explanation = "";
-
-    const myTrumps = myHand
-      .filter((card) => card.suit === trumpSuit)
+  // Função pura: Retorna a melhor carta (Usada pelas Dicas E pelo Bot)
+  const getBestCardToPlay = (
+    playerId,
+    currentHand,
+    currentTable,
+    currentTrump,
+    currentScore
+  ) => {
+    const isFirstToPlay = currentTable.length === 0;
+    const myTrumps = currentHand
+      .filter((card) => card.suit === currentTrump)
       .sort(
         (a, b) =>
-          getCardPower(a, trumpSuit, trumpSuit) -
-          getCardPower(b, trumpSuit, trumpSuit)
+          getCardPower(a, currentTrump, currentTrump) -
+          getCardPower(b, currentTrump, currentTrump)
       );
     const lowTrumps = myTrumps.filter((card) =>
       ["Q", "J", "K", "4", "5", "6"].includes(card.label)
     );
-    const sortedHandByPtsAsc = [...myHand].sort(
-      (a, b) => getCardPoints(a, trumpSuit) - getCardPoints(b, trumpSuit)
+    const sortedHandByPtsAsc = [...currentHand].sort(
+      (a, b) => getCardPoints(a, currentTrump) - getCardPoints(b, currentTrump)
     );
 
-    // REGRA DE OURO: Tudo ou Nada
+    // Tudo ou Nada
     if (!isFirstToPlay) {
-      const opCard = tableCards[0].card;
+      const opCard = currentTable[0].card;
       const leadSuit = opCard.suit;
-      const tablePoints = getCardPoints(opCard, trumpSuit);
-      const opPower = getCardPower(opCard, trumpSuit, leadSuit);
-
-      for (let card of myHand) {
-        const cardPts = getCardPoints(card, trumpSuit);
-        const cardPower = getCardPower(card, trumpSuit, leadSuit);
-
+      const tablePoints = getCardPoints(opCard, currentTrump);
+      const opPower = getCardPower(opCard, currentTrump, leadSuit);
+      for (let card of currentHand) {
+        const cardPts = getCardPoints(card, currentTrump);
+        const cardPower = getCardPower(card, currentTrump, leadSuit);
         if (
           cardPower > opPower &&
-          myCurrentScore + tablePoints + cardPts >= POINTS_GOAL
-        ) {
-          setCurrentHint({
-            cardId: card.id,
-            text: "Jogue esta! Você vai chegar aos 31 pontos e ganhar a partida agora!",
-          });
-          return;
-        }
+          currentScore + tablePoints + cardPts >= POINTS_GOAL
+        )
+          return card;
       }
     }
 
     if (isFirstToPlay) {
-      if (lowTrumps.length > 0) {
-        bestCard = lowTrumps[0];
-        explanation =
-          "Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
-      } else {
-        bestCard = sortedHandByPtsAsc[0];
-        const pts = getCardPoints(bestCard, trumpSuit);
-
-        if (pts === 0) {
-          explanation = "Jogue um Limpo para ver a reação do oponente.";
-        } else {
-          explanation =
-            "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno.";
-        }
-      }
+      if (lowTrumps.length > 0) return lowTrumps[0];
+      return sortedHandByPtsAsc[0];
     } else {
-      const opCard = tableCards[0].card;
-      const opPts = getCardPoints(opCard, trumpSuit);
+      const opCard = currentTable[0].card;
+      const opPts = getCardPoints(opCard, currentTrump);
       const leadSuit = opCard.suit;
-      const opPower = getCardPower(opCard, trumpSuit, leadSuit);
-      const opIsTrump = opCard.suit === trumpSuit;
+      const opPower = getCardPower(opCard, currentTrump, leadSuit);
+      const opIsTrump = opCard.suit === currentTrump;
 
-      const winningCards = myHand.filter(
-        (c) => getCardPower(c, trumpSuit, leadSuit) > opPower
+      const winningCards = currentHand.filter(
+        (c) => getCardPower(c, currentTrump, leadSuit) > opPower
       );
       const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
-      const winningTrumps = winningCards.filter((c) => c.suit === trumpSuit);
+      const winningTrumps = winningCards.filter((c) => c.suit === currentTrump);
 
-      // 1. Ganhar seguindo o naipe (Encarte ou Corte em cima de Corte)
       if (
         winningLeadSuit.length > 0 &&
-        (opPts > 0 || getCardPoints(winningLeadSuit[0], trumpSuit) > 0)
+        (opPts > 0 || getCardPoints(winningLeadSuit[0], currentTrump) > 0)
       ) {
-        const bestWinningLead = [...winningLeadSuit].sort(
-          (a, b) => getCardPoints(b, trumpSuit) - getCardPoints(a, trumpSuit)
+        return [...winningLeadSuit].sort(
+          (a, b) =>
+            getCardPoints(b, currentTrump) - getCardPoints(a, currentTrump)
         )[0];
-        bestCard = bestWinningLead;
-        const myPts = getCardPoints(bestCard, trumpSuit);
-
-        if (leadSuit === trumpSuit) {
-          explanation = `Corte! Você tem um trunfo maior. Roube os pontos da mesa.`;
-        } else {
-          explanation = `Encarte! Jogue uma carta maior do mesmo naipe e garanta os pontos.`;
-        }
-
-        // 2. Não tem o naipe, mas tem trunfo (Corte)
       } else if (!opIsTrump && winningTrumps.length > 0 && opPts >= 2) {
-        bestCard = winningTrumps[0];
-        explanation = `Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.`;
-
-        // 3. Descarte
+        return winningTrumps[0];
       } else {
-        bestCard = sortedHandByPtsAsc[0];
-        if (getCardPoints(bestCard, trumpSuit) === 0) {
-          explanation =
-            "Não vale a pena gastar carta boa. Jogue um Limpo para não dar pontos a ele.";
-        } else {
-          explanation =
-            "Descarte a sua carta de MENOR valor para diminuir o prejuízo.";
-        }
+        return sortedHandByPtsAsc[0];
       }
-    }
-
-    if (bestCard) {
-      setCurrentHint({ cardId: bestCard.id, text: explanation });
     }
   };
 
+  const generateHint = () => {
+    if (!me?.id || turn !== me.id) return;
+    const myHand = hands[me.id] || [];
+    if (myHand.length === 0) return;
+
+    const bestCard = getBestCardToPlay(
+      me.id,
+      myHand,
+      tableCards,
+      trumpSuit,
+      roundScores[me.id] || 0
+    );
+    if (!bestCard) return;
+
+    let explanation = "";
+    const isFirstToPlay = tableCards.length === 0;
+
+    if (
+      !isFirstToPlay &&
+      getCardPower(bestCard, trumpSuit, tableCards[0].card.suit) >
+        getCardPower(tableCards[0].card, trumpSuit, tableCards[0].card.suit) &&
+      (roundScores[me.id] || 0) +
+        getCardPoints(tableCards[0].card, trumpSuit) +
+        getCardPoints(bestCard, trumpSuit) >=
+        POINTS_GOAL
+    ) {
+      explanation =
+        "Jogue esta! Você vai chegar aos 31 pontos e ganhar a partida agora!";
+    } else if (isFirstToPlay) {
+      if (bestCard.suit === trumpSuit)
+        explanation =
+          "Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
+      else if (getCardPoints(bestCard, trumpSuit) === 0)
+        explanation = "Jogue um Limpo para ver a reação do oponente.";
+      else
+        explanation =
+          "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno.";
+    } else {
+      const leadSuit = tableCards[0].card.suit;
+      if (
+        bestCard.suit === leadSuit &&
+        getCardPower(bestCard, trumpSuit, leadSuit) >
+          getCardPower(tableCards[0].card, trumpSuit, leadSuit)
+      ) {
+        if (leadSuit === trumpSuit)
+          explanation = `Corte! Você tem um trunfo maior. Roube os pontos da mesa.`;
+        else
+          explanation = `Encarte! Jogue uma carta maior do mesmo naipe e garanta os pontos.`;
+      } else if (
+        bestCard.suit === trumpSuit &&
+        getCardPower(bestCard, trumpSuit, leadSuit) >
+          getCardPower(tableCards[0].card, trumpSuit, leadSuit)
+      ) {
+        explanation = `Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.`;
+      } else {
+        if (getCardPoints(bestCard, trumpSuit) === 0)
+          explanation =
+            "Não vale a pena gastar carta boa. Jogue um Limpo para não dar pontos a ele.";
+        else
+          explanation =
+            "Descarte a sua carta de MENOR valor para diminuir o prejuízo.";
+      }
+    }
+    setCurrentHint({ cardId: bestCard.id, text: explanation });
+  };
+
+  // ============================================================================
+  // LÓGICA DO COMPUTADOR JOGANDO (SINGLE PLAYER)
+  // ============================================================================
+
+  // Bot Escolhe o Trunfo
+  useEffect(() => {
+    if (!isSinglePlayer || gameState !== "choose_trump") return;
+    const bot = playersList.find((p) => p.id !== me?.id);
+    if (bot && tocoTarget === bot.id) {
+      const timer = setTimeout(() => {
+        const suits = Object.keys(SUITS);
+        const randomSuit = suits[Math.floor(Math.random() * suits.length)];
+        syncState({ trumpSuit: randomSuit, gameState: "dealing" });
+      }, 1500); // 1.5s de tempo de pensamento
+      return () => clearTimeout(timer);
+    }
+  }, [gameState, tocoTarget, isSinglePlayer]);
+
+  // Bot Joga a Carta
+  useEffect(() => {
+    if (!isSinglePlayer || gameState !== "playing") return;
+    const bot = playersList.find((p) => p.id !== me?.id);
+
+    if (bot && turn === bot.id) {
+      const timer = setTimeout(() => {
+        const botId = bot.id;
+        // Usamos stateRef para garantir que o bot está olhando para a mesa ATUALIZADA
+        const currentHands = stateRef.current?.hands || {};
+        const botHand = currentHands[botId] || [];
+        if (botHand.length === 0) return;
+
+        const botScore = stateRef.current?.roundScores[botId] || 0;
+        const cardToPlay = getBestCardToPlay(
+          botId,
+          botHand,
+          stateRef.current.tableCards,
+          stateRef.current.trumpSuit,
+          botScore
+        );
+
+        if (cardToPlay) {
+          const newHand = botHand.filter((c) => c.id !== cardToPlay.id);
+          const newTable = [
+            ...stateRef.current.tableCards,
+            { playerId: botId, card: cardToPlay },
+          ];
+          let nextTurn = turn;
+          if (newTable.length < playersList.length) {
+            nextTurn = me.id; // Passa a vez para o jogador real
+          }
+
+          syncState({
+            hands: { ...currentHands, [botId]: newHand },
+            tableCards: newTable,
+            turn: nextTurn,
+          });
+        }
+      }, 1800); // 1.8s simulando o computador raciocinando
+      return () => clearTimeout(timer);
+    }
+  }, [turn, gameState, isSinglePlayer, tableCards.length]);
+
+  // ============================================================================
+  // FLUXO DE JOGO E RODADAS
+  // ============================================================================
   const createDeepShuffleDeck = () => {
     let newDeck = [];
     Object.keys(SUITS).forEach((suitKey) => {
@@ -396,13 +574,15 @@ export default function App() {
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
       return;
-    const alreadyPlayed = tableCards.some((tc) => tc.playerId === me.id);
-    if (alreadyPlayed) return;
+    if (tableCards.some((tc) => tc.playerId === me.id)) return;
+
+    if (settings.vibration && navigator.vibrate) navigator.vibrate(40);
 
     setLocalProcessing(true);
     setCurrentHint(null);
 
-    const myHand = hands[me.id] || [];
+    const currentHands = stateRef.current?.hands || {};
+    const myHand = currentHands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
     const newTable = [...tableCards, { playerId: me.id, card }];
 
@@ -412,9 +592,8 @@ export default function App() {
       const nextIdx = (myIdx + 1) % playersList.length;
       nextTurn = playersList[nextIdx].id;
     }
-
     syncState({
-      [`hands/${me.id}`]: newHand,
+      hands: { ...currentHands, [me.id]: newHand },
       tableCards: newTable,
       turn: nextTurn,
     });
@@ -448,7 +627,6 @@ export default function App() {
 
     const p1 = validCards[0];
     const p2 = validCards[1];
-
     if (!p1 || !p2) {
       syncState({ tableCards: [] });
       return;
@@ -507,10 +685,12 @@ export default function App() {
       lives: currentLives,
       gamePoints: currentGP,
     } = stateRef.current;
-
     const loserId = playersList.find((p) => p.id !== winnerId)?.id;
     let resultType = "";
     let updates = {};
+
+    if (settings.vibration && navigator.vibrate)
+      navigator.vibrate([100, 50, 100]);
 
     if (winnerId === currentTarget) {
       resultType = "escaped";
@@ -527,7 +707,6 @@ export default function App() {
         updates = { gamePoints: gPoints, lives: 3 };
       }
     }
-
     updates.roundResult = {
       type: resultType,
       winnerId: winnerId,
@@ -542,62 +721,147 @@ export default function App() {
   // 5. TELAS VISUAIS
   // ============================================================================
 
+  // --- TELA INICIAL (Login e Menu) ---
   if (!roomId) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center text-white font-sans p-4 overflow-y-auto"
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
         translate="no"
       >
-        {/* TELA INICIAL DOURADA PERFEITA */}
-        <div className="w-full max-w-sm flex flex-col items-center justify-center pt-10 md:pt-20 pb-24">
+        {/* BOTÃO DE CONFIGURAÇÕES */}
+        <button
+          onClick={() => setShowSettings(true)}
+          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+        >
+          ⚙️
+        </button>
+
+        {/* MODAL DE CONFIGURAÇÕES */}
+        {showSettings && (
+          <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
+              <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                <h2 className="text-2xl font-black text-yellow-400">
+                  Configurações
+                </h2>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="text-white bg-red-600 rounded-full w-8 h-8 font-bold"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-5">
+                <label className="flex justify-between items-center text-white font-medium">
+                  <span>💾 Lembrar meu Nome</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.saveName}
+                    onChange={() => toggleSetting("saveName")}
+                    className="w-6 h-6 accent-yellow-500"
+                  />
+                </label>
+                <label className="flex justify-between items-center text-white font-medium">
+                  <span>💡 Exibir botão de Dicas</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.showHints}
+                    onChange={() => toggleSetting("showHints")}
+                    className="w-6 h-6 accent-yellow-500"
+                  />
+                </label>
+                <label className="flex justify-between items-center text-white font-medium">
+                  <span>📳 Vibração (Tátil)</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.vibration}
+                    onChange={() => toggleSetting("vibration")}
+                    className="w-6 h-6 accent-yellow-500"
+                  />
+                </label>
+                <label className="flex justify-between items-center text-white font-medium opacity-50">
+                  <span>🔊 Efeitos Sonoros (Em breve)</span>
+                  <input
+                    type="checkbox"
+                    disabled
+                    checked={settings.sound}
+                    onChange={() => toggleSetting("sound")}
+                    className="w-6 h-6"
+                  />
+                </label>
+                <div className="text-white font-medium border-t border-white/10 pt-4 opacity-50">
+                  <span className="mb-2 block">
+                    🃏 Estilo do Baralho (Em breve)
+                  </span>
+                  <select
+                    disabled
+                    className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm"
+                  >
+                    <option>Padrão (Branco)</option>
+                    <option>Modo Dark (Noturno)</option>
+                    <option>Cassino (Luxo)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="w-full max-w-sm flex flex-col items-center pt-8 md:pt-12 pb-24">
           <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
-            <span
-              className="text-yellow-400 font-sans"
-              style={{ color: "#facc15" }}
-            >
+            <span className="font-sans" style={{ color: "#facc15" }}>
               ♦
             </span>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
               TOCO
             </span>
-            <span
-              className="text-yellow-500 font-sans"
-              style={{ color: "#eab308" }}
-            >
+            <span className="font-sans" style={{ color: "#eab308" }}>
               ♣
             </span>
           </h1>
-          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
+          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
             Desenvolvido por Ryan Kilberth
           </p>
 
-          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full shadow-2xl">
-            <p className="mb-6 text-gray-300 font-bold uppercase tracking-wider text-sm">
-              Entrar no Jogo
-            </p>
+          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl">
             <input
               type="text"
               placeholder="Seu Nome ou Apelido"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-yellow-500 text-center font-bold"
+              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-4 mb-6 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
             />
+
             {errorMsg && (
-              <p className="text-red-400 text-sm mb-4 font-bold animate-pulse">
+              <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
                 {errorMsg}
               </p>
             )}
+
+            {/* BOTÃO JOGAR SOZINHO ATIVADO */}
+            <button
+              onClick={startSinglePlayer}
+              className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
+            >
+              <span className="text-xl">🤖</span> JOGAR SOZINHO
+            </button>
+
+            <div className="flex items-center gap-2 mb-6">
+              <div className="h-px bg-white/20 flex-1"></div>
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                Multiplayer
+              </span>
+              <div className="h-px bg-white/20 flex-1"></div>
+            </div>
+
             <button
               onClick={createRoom}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95"
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
             >
               CRIAR NOVA SALA
             </button>
-            <div className="flex items-center gap-2 mb-6">
-              <div className="h-px bg-white/20 flex-1"></div>
-              <span className="text-xs text-gray-500 uppercase">Ou</span>
-              <div className="h-px bg-white/20 flex-1"></div>
-            </div>
+
             <div className="flex gap-2">
               <input
                 type="number"
@@ -620,11 +884,11 @@ export default function App() {
     );
   }
 
+  // --- COMPONENTES DA MESA DE JOGO ---
   const EndGameMessage = () => {
     if (!roundResult) return null;
     const iAmWinner = me?.id === roundResult.winnerId;
     const iAmLoser = me?.id === roundResult.loserId;
-
     if (roundResult.type === "escaped") {
       if (iAmWinner)
         return (
@@ -677,7 +941,6 @@ export default function App() {
     const isTrump = card.suit === trumpSuit;
     const opacityClass =
       localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
-    // Força o símbolo ser do próprio naipe da carta, sem emoji variation
     const sym =
       card.suit === "diamonds"
         ? "♦"
@@ -696,13 +959,11 @@ export default function App() {
         return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
       if (card.label === "J")
         return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
-
       const num = parseInt(card.label);
       if (!isNaN(num)) {
         let grid = "grid-cols-1";
         if (num >= 4) grid = "grid-cols-2";
         if (num >= 7) grid = "grid-cols-3";
-
         return (
           <div
             className={`grid ${grid} gap-1 items-center justify-items-center h-full py-1 w-full px-1.5`}
@@ -739,7 +1000,6 @@ export default function App() {
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans">
           {sym}
         </div>
-
         <div
           className={`absolute top-1 left-1.5 flex flex-col items-center leading-none ${color} z-10`}
         >
@@ -750,13 +1010,11 @@ export default function App() {
             {sym}
           </span>
         </div>
-
         <div
           className={`flex-1 flex items-center justify-center w-full mt-2.5 mb-1 ${color}`}
         >
           {renderCenter()}
         </div>
-
         <div
           className={`absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180 ${color} z-10`}
         >
@@ -767,7 +1025,6 @@ export default function App() {
             {sym}
           </span>
         </div>
-
         {isTrump && (
           <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
             <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
@@ -818,7 +1075,20 @@ export default function App() {
     </div>
   );
 
+  // --- TELA DE LOBBY CORRIGIDA (Bug Resolvido) ---
   if (gameState === "lobby") {
+    // Se for modo Offline, exibe uma tela rápida de carregamento e o jogo começa sozinho.
+    if (isSinglePlayer) {
+      return (
+        <div className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4">
+          <div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-yellow-400 font-bold uppercase tracking-widest animate-pulse">
+            Iniciando Partida Local...
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
@@ -906,7 +1176,9 @@ export default function App() {
           >
             <div className="flex justify-between items-center">
               <span className="font-bold truncate text-lg md:text-xl drop-shadow">
-                {playersList[0].name}
+                {playersList[0].id === "bot_1"
+                  ? "🤖 Computador"
+                  : playersList[0].name}
               </span>
               {tocoTarget === playersList[0].id && (
                 <div className="flex gap-1 text-lg drop-shadow">
@@ -941,7 +1213,9 @@ export default function App() {
           >
             <div className="flex justify-between items-center flex-row-reverse">
               <span className="font-bold truncate text-lg md:text-xl drop-shadow">
-                {playersList[1].name}
+                {playersList[1].id === "bot_1"
+                  ? "🤖 Computador"
+                  : playersList[1].name}
               </span>
               {tocoTarget === playersList[1].id && (
                 <div className="flex gap-1 text-lg drop-shadow">
@@ -967,7 +1241,7 @@ export default function App() {
         )}
       </div>
 
-      {/* BALÃO DE DICA (Flutuante no meio da tela) */}
+      {/* BALÃO DE DICA DIRETO */}
       {currentHint && (
         <div className="absolute top-32 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -977,7 +1251,7 @@ export default function App() {
             >
               X
             </button>
-            <p className="text-sm md:text-base font-medium text-blue-50 leading-tight">
+            <p className="text-sm md:text-base font-medium text-white leading-tight">
               {currentHint.text}
             </p>
           </div>
@@ -1067,7 +1341,7 @@ export default function App() {
               </button>
             </div>
 
-            {turn === me?.id && (
+            {turn === me?.id && settings.showHints && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
                 <button
                   onClick={generateHint}
