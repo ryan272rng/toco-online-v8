@@ -5,6 +5,108 @@ import { ref, onValue, set, update, get, remove } from "firebase/database";
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
+// ÍCONE SVG INLINE: Leque de Cartas (Substituindo o emoji de pasta)
+const CardFanIcon = () => (
+  <svg
+    width="28"
+    height="28"
+    viewBox="0 0 28 28"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className="drop-shadow-lg opacity-90 mb-1"
+  >
+    <rect
+      x="2"
+      y="2.5"
+      width="16"
+      height="23"
+      rx="3"
+      fill="white"
+      stroke="#D1D5DB"
+      stroke-width="1.5"
+    />
+    <text
+      x="4"
+      y="9"
+      fill="#DC2626"
+      font-family="sans-serif"
+      font-size="5"
+      font-weight="bold"
+    >
+      ♥
+    </text>
+
+    <rect
+      x="0"
+      y="4.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(-15 0 4.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      stroke-width="1.5"
+    />
+    <text
+      x="1"
+      y="9"
+      fill="#111827"
+      font-family="sans-serif"
+      font-size="5"
+      font-weight="bold"
+      transform="rotate(-15 1 9)"
+    >
+      ♣
+    </text>
+
+    <rect
+      x="12"
+      y="2.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(15 12 2.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      stroke-width="1.5"
+    />
+    <text
+      x="13"
+      y="8"
+      fill="#DC2626"
+      font-family="sans-serif"
+      font-size="5"
+      font-weight="bold"
+      transform="rotate(15 13 8)"
+    >
+      ♦
+    </text>
+
+    <rect
+      x="18"
+      y="4.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(30 18 4.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      stroke-width="1.5"
+    />
+    <text
+      x="19"
+      y="11"
+      fill="#111827"
+      font-family="sans-serif"
+      font-size="5"
+      font-weight="bold"
+      transform="rotate(30 19 11)"
+    >
+      ♠
+    </text>
+  </svg>
+);
+
 const SUITS = {
   hearts: {
     symbol: "♥",
@@ -798,7 +900,7 @@ export default function App() {
   // 5. COMPONENTES VISUAIS REUTILIZÁVEIS
   // ============================================================================
 
-  // MODAL DE CONFIGURAÇÕES GLOBAL (Disponível no Lobby e no Jogo)
+  // MODAL DE CONFIGURAÇÕES GLOBAL
   const SettingsModal = () => (
     <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
@@ -888,58 +990,6 @@ export default function App() {
       </div>
     </div>
   );
-
-  const EndGameMessage = () => {
-    if (!roundResult) return null;
-    const iAmWinner = me?.id === roundResult.winnerId;
-    const iAmLoser = me?.id === roundResult.loserId;
-    if (roundResult.type === "escaped") {
-      if (iAmWinner)
-        return (
-          <span className="text-green-400 drop-shadow-md">
-            UFA! ME LIVREI! 😅
-          </span>
-        );
-      if (iAmLoser)
-        return (
-          <span className="text-yellow-400 drop-shadow-md">
-            ELE SE LIVROU! O TOCO AGORA É SEU! 🫵
-          </span>
-        );
-      return <span>O ALVO ESCAPOU!</span>;
-    }
-    if (roundResult.type === "life_lost") {
-      if (iAmLoser)
-        return (
-          <span className="text-red-400 drop-shadow-md">
-            PERDI UMA VIDA! 💔
-          </span>
-        );
-      if (iAmWinner)
-        return (
-          <span className="text-green-400 drop-shadow-md">
-            VOCÊ TIROU UMA VIDA DELE! ⚔️
-          </span>
-        );
-      return <span>ALVO PERDEU VIDA!</span>;
-    }
-    if (roundResult.type === "toco_confirmed") {
-      if (iAmLoser)
-        return (
-          <span className="text-red-600 drop-shadow-md">
-            QUE PENA! PEGUEI O TOCO. 🪵
-          </span>
-        );
-      if (iAmWinner)
-        return (
-          <span className="text-yellow-400 drop-shadow-md">
-            AÊ! VOCÊ DEU UM TOCO NELE! 🏆
-          </span>
-        );
-      return <span>TOCO CONFIRMADO!</span>;
-    }
-    return null;
-  };
 
   const CardFace = ({ card, playable, onClick, isHinted }) => {
     const { deckStyle, cardSize } = settings;
@@ -1180,7 +1230,7 @@ export default function App() {
 
             <button
               onClick={createRoom}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase trackingest text-sm transition-transform active:scale-95"
             >
               CRIAR NOVA SALA
             </button>
@@ -1191,7 +1241,7 @@ export default function App() {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
                 maxLength={4}
-                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
+                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl trackingest"
               />
               <button
                 onClick={joinRoom}
@@ -1206,7 +1256,7 @@ export default function App() {
     );
   }
 
-  // --- TELA DE LOBBY (Se não for Single Player) ---
+  // --- TELA DE LOBBY ---
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
@@ -1245,7 +1295,7 @@ export default function App() {
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
-            <span className="font-mono text-2xl tracking-widest bg-white/30 px-2 rounded">
+            <span className="font-mono text-2xl trackingest bg-white/30 px-2 rounded">
               {roomId}
             </span>
           </div>
@@ -1266,7 +1316,7 @@ export default function App() {
           {me?.isHost && playersList.length >= 2 ? (
             <button
               onClick={startGameFirstTime}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-4 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] transition-all transform hover:scale-105 active:scale-95 uppercase tracking-widest text-lg"
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-4 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] transition-all transform hover:scale-105 active:scale-95 uppercase trackingest text-lg"
             >
               INICIAR JOGO
             </button>
@@ -1293,10 +1343,10 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
-      {/* BOTÃO E MODAL GLOBAL DE CONFIGURAÇÕES NA MESA */}
+      {/* CORREÇÃO: Movi o botão para top-28 para descer ele (Placar tem h-24) */}
       <button
         onClick={() => setShowSettings(true)}
-        className="absolute top-4 left-1/2 transform -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 text-3xl opacity-60 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50 drop-shadow-md bg-black/30 rounded-full p-1 backdrop-blur-sm"
+        className="absolute top-28 left-1/2 transform -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 text-3xl opacity-60 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50 drop-shadow-md bg-black/30 rounded-full p-1 backdrop-blur-sm"
       >
         ⚙️
       </button>
@@ -1471,13 +1521,12 @@ export default function App() {
         {showCards && (
           <>
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
+              {/* CORREÇÃO: Mudei o ícone para o leque SVG, mantendo-o pequeno no canto */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
               >
-                <span className="text-2xl md:text-3xl drop-shadow-lg opacity-80">
-                  🗂️
-                </span>
+                <CardFanIcon />
                 <span className="text-[10px] md:text-xs font-bold tracking-wider">
                   Pilha ({myTricks.length})
                 </span>
@@ -1504,7 +1553,7 @@ export default function App() {
 
         <div className="mb-4 h-10 flex items-center justify-center">
           {turn === me?.id ? (
-            <span className="bg-yellow-400 text-black font-black px-8 py-2 md:py-3 rounded-full animate-pulse shadow-[0_0_25px_rgba(250,204,21,0.5)] border-2 border-white tracking-widest text-sm md:text-base uppercase cursor-default">
+            <span className="bg-yellow-400 text-black font-black px-8 py-2 md:py-3 rounded-full animate-pulse shadow-[0_0_25px_rgba(250,204,21,0.5)] border-2 border-white trackingest text-sm md:text-base uppercase cursor-default">
               SUA VEZ DE JOGAR
             </span>
           ) : (
@@ -1556,7 +1605,7 @@ export default function App() {
                     >
                       {SUITS[s].symbol}
                     </span>
-                    <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase tracking-widest">
+                    <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase trackingest">
                       {SUITS[s].name}
                     </span>
                   </button>
@@ -1635,7 +1684,7 @@ export default function App() {
               {me?.isHost ? (
                 <button
                   onClick={() => startNewHand(tocoTarget)}
-                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-extrabold py-5 px-8 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] uppercase tracking-widest transition-all transform hover:scale-105 active:scale-95 text-lg"
+                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-extrabold py-5 px-8 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] uppercase trackingest transition-all transform hover:scale-105 active:scale-95 text-lg"
                 >
                   Próxima Mão
                 </button>
