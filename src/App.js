@@ -3,9 +3,8 @@ import { database } from "./firebase";
 import { ref, onValue, set, update, get, remove } from "firebase/database";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (NOVO SISTEMA DE CORES)
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
-// Usando caracteres puros (sem \uFE0F) para evitar renderização 3D de emoji
 const SUITS = {
   hearts: {
     symbol: "♥",
@@ -54,7 +53,7 @@ const POINTS_GOAL = 31;
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS DO FIREBASE E SINGLE PLAYER
+  // 2. ESTADOS GERAIS
   // ============================================================================
   const [playerName, setPlayerName] = useState("");
   const [pinInput, setPinInput] = useState("");
@@ -71,7 +70,7 @@ export default function App() {
   const [currentHint, setCurrentHint] = useState(null);
 
   // ============================================================================
-  // ESTADOS DE CONFIGURAÇÃO (Salvos no celular)
+  // ESTADOS DE CONFIGURAÇÃO E ÁUDIO
   // ============================================================================
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState(() => {
@@ -83,7 +82,8 @@ export default function App() {
           vibration: true,
           showHints: true,
           saveName: false,
-          deckStyle: "default",
+          deckStyle: "luxo",
+          cardSize: "normal",
         };
   });
 
@@ -103,20 +103,67 @@ export default function App() {
     }
   }, []);
 
+  const updateSetting = (key, value) =>
+    setSettings((prev) => ({ ...prev, [key]: value }));
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // GERADOR DE EFEITOS SONOROS (Sintetizador Web Nativo)
+  const playSoundEffect = (type) => {
+    if (!settings.sound) return;
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === "card") {
+        // Som curto e seco da carta
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+      } else if (type === "win") {
+        // Som alegre de vitória
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(554, ctx.currentTime + 0.1);
+        osc.frequency.setValueAtTime(659, ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } else if (type === "lose") {
+        // Som triste de perder vida
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(250, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.4);
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
 
   const stateRef = useRef(roomData);
   useEffect(() => {
     stateRef.current = roomData;
   }, [roomData]);
-
   useEffect(() => {
     setCurrentHint(null);
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. LÓGICA DE REDE E OFFLINE
+  // 3. LÓGICA DE REDE E RECONEXÃO
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -131,6 +178,14 @@ export default function App() {
       if (!roomId) return;
       update(ref(database, `rooms/${roomId}`), updates);
     }
+  };
+
+  const exitGame = () => {
+    setRoomId(null);
+    setRoomData(null);
+    setIsSinglePlayer(false);
+    isOfflineRef.current = false;
+    setShowSettings(false);
   };
 
   const createRoom = async () => {
@@ -171,19 +226,40 @@ export default function App() {
     const snapshot = await get(roomRef);
 
     if (snapshot.exists()) {
-      const myId = `player_${Date.now()}`;
-      const newMe = { id: myId, name: playerName, isHost: false };
+      const currentRoomData = snapshot.val();
+      const existingPlayers = Object.values(currentRoomData.players || {});
+
+      // SISTEMA DE RECONEXÃO: Busca se o nome já existe na sala
+      const matchedPlayer = existingPlayers.find(
+        (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
+      );
+
+      let myId;
+      let newMe;
+
+      if (matchedPlayer) {
+        // Se o nome existe, o jogador recupera a cadeira dele!
+        myId = matchedPlayer.id;
+        newMe = matchedPlayer;
+      } else if (existingPlayers.length >= 2) {
+        return setErrorMsg("A sala já está cheia!");
+      } else {
+        // Se não existe e tem vaga, entra como novo jogador
+        myId = `player_${Date.now()}`;
+        newMe = { id: myId, name: playerName, isHost: false };
+        await update(ref(database, `rooms/${pinInput}/players`), {
+          [myId]: newMe,
+        });
+        await update(ref(database, `rooms/${pinInput}/roundScores`), {
+          [myId]: 0,
+        });
+        await update(ref(database, `rooms/${pinInput}/gamePoints`), {
+          [myId]: 0,
+        });
+      }
+
       setIsSinglePlayer(false);
       isOfflineRef.current = false;
-      await update(ref(database, `rooms/${pinInput}/players`), {
-        [myId]: newMe,
-      });
-      await update(ref(database, `rooms/${pinInput}/roundScores`), {
-        [myId]: 0,
-      });
-      await update(ref(database, `rooms/${pinInput}/gamePoints`), {
-        [myId]: 0,
-      });
       setMe(newMe);
       setRoomId(pinInput);
     } else {
@@ -193,7 +269,6 @@ export default function App() {
 
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
-
     const myId = `player_${Date.now()}`;
     const botId = `bot_1`;
     const newMe = { id: myId, name: playerName, isHost: true };
@@ -231,7 +306,7 @@ export default function App() {
       if (snapshot.exists()) {
         setRoomData(snapshot.val());
       } else {
-        setErrorMsg("A sala foi fechada.");
+        setErrorMsg("A sala foi fechada pelo Host.");
         setRoomId(null);
       }
     });
@@ -445,7 +520,7 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
-  // Bot Escolhe o Trunfo
+  // Lógica do Computador
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
     const bot = playersList.find((p) => p.id !== me?.id);
@@ -459,11 +534,9 @@ export default function App() {
     }
   }, [gameState, tocoTarget]);
 
-  // Bot Joga a Carta
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
     const bot = playersList.find((p) => p.id !== me?.id);
-
     if (bot && turn === bot.id) {
       const timer = setTimeout(() => {
         const botId = bot.id;
@@ -481,16 +554,14 @@ export default function App() {
         );
 
         if (cardToPlay) {
+          playSoundEffect("card"); // Computador também faz barulho!
           const newHand = botHand.filter((c) => c.id !== cardToPlay.id);
           const newTable = [
             ...stateRef.current.tableCards,
             { playerId: botId, card: cardToPlay },
           ];
           let nextTurn = turn;
-          if (newTable.length < playersList.length) {
-            nextTurn = me.id;
-          }
-
+          if (newTable.length < playersList.length) nextTurn = me.id;
           syncState({
             hands: { ...currentHands, [botId]: newHand },
             tableCards: newTable,
@@ -577,6 +648,7 @@ export default function App() {
     if (tableCards.some((tc) => tc.playerId === me.id)) return;
 
     if (settings.vibration && navigator.vibrate) navigator.vibrate(40);
+    playSoundEffect("card"); // Toca o som!
 
     setLocalProcessing(true);
     setCurrentHint(null);
@@ -689,8 +761,13 @@ export default function App() {
     let resultType = "";
     let updates = {};
 
-    if (settings.vibration && navigator.vibrate)
-      navigator.vibrate([100, 50, 100]);
+    if (winnerId === me?.id) {
+      playSoundEffect("win");
+    } else {
+      playSoundEffect("lose");
+      if (settings.vibration && navigator.vibrate)
+        navigator.vibrate([100, 50, 100]);
+    }
 
     if (winnerId === currentTarget) {
       resultType = "escaped";
@@ -718,162 +795,99 @@ export default function App() {
   };
 
   // ============================================================================
-  // 5. TELAS VISUAIS
+  // 5. COMPONENTES VISUAIS REUTILIZÁVEIS
   // ============================================================================
 
-  if (!roomId) {
-    return (
-      <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
-        translate="no"
-      >
-        <button
-          onClick={() => setShowSettings(true)}
-          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
-        >
-          ⚙️
-        </button>
-        {showSettings && (
-          <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
-              <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-                <h2 className="text-2xl font-black text-yellow-400">
-                  Configurações
-                </h2>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="text-white bg-red-600 rounded-full w-8 h-8 font-bold"
-                >
-                  &times;
-                </button>
-              </div>
-              <div className="flex flex-col gap-5">
-                <label className="flex justify-between items-center text-white font-medium">
-                  <span>💾 Lembrar meu Nome</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.saveName}
-                    onChange={() => toggleSetting("saveName")}
-                    className="w-6 h-6 accent-yellow-500"
-                  />
-                </label>
-                <label className="flex justify-between items-center text-white font-medium">
-                  <span>💡 Exibir botão de Dicas</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.showHints}
-                    onChange={() => toggleSetting("showHints")}
-                    className="w-6 h-6 accent-yellow-500"
-                  />
-                </label>
-                <label className="flex justify-between items-center text-white font-medium">
-                  <span>📳 Vibração (Tátil)</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.vibration}
-                    onChange={() => toggleSetting("vibration")}
-                    className="w-6 h-6 accent-yellow-500"
-                  />
-                </label>
-                <label className="flex justify-between items-center text-white font-medium opacity-50">
-                  <span>🔊 Efeitos Sonoros (Em breve)</span>
-                  <input
-                    type="checkbox"
-                    disabled
-                    checked={settings.sound}
-                    onChange={() => toggleSetting("sound")}
-                    className="w-6 h-6"
-                  />
-                </label>
-                <div className="text-white font-medium border-t border-white/10 pt-4">
-                  <span className="mb-2 block">🃏 Estilo do Baralho</span>
-                  <select
-                    value={settings.deckStyle}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        deckStyle: e.target.value,
-                      }))
-                    }
-                    className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
-                  >
-                    <option value="default">Padrão (Branco)</option>
-                    <option value="dark">Modo Dark (Noturno)</option>
-                    <option value="luxo">Cassino (Luxo)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="w-full max-w-sm flex flex-col items-center pt-8 md:pt-12 pb-24">
-          <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
-            <span className="font-sans" style={{ color: "#facc15" }}>
-              ♦
-            </span>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
-              TOCO
-            </span>
-            <span className="font-sans" style={{ color: "#eab308" }}>
-              ♣
-            </span>
-          </h1>
-          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
-            Desenvolvido por Ryan Kilberth
-          </p>
-          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl">
+  // MODAL DE CONFIGURAÇÕES GLOBAL (Disponível no Lobby e no Jogo)
+  const SettingsModal = () => (
+    <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
+        <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+          <h2 className="text-2xl font-black text-yellow-400">Configurações</h2>
+          <button
+            onClick={() => setShowSettings(false)}
+            className="text-white bg-red-600 rounded-full w-8 h-8 font-bold"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <label className="flex justify-between items-center text-white font-medium">
+            <span>💾 Lembrar meu Nome</span>
             <input
-              type="text"
-              placeholder="Seu Nome ou Apelido"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-4 mb-6 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
+              type="checkbox"
+              checked={settings.saveName}
+              onChange={() => toggleSetting("saveName")}
+              className="w-6 h-6 accent-yellow-500"
             />
-            {errorMsg && (
-              <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
-                {errorMsg}
-              </p>
-            )}
-            <button
-              onClick={startSinglePlayer}
-              className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
+          </label>
+          <label className="flex justify-between items-center text-white font-medium">
+            <span>💡 Exibir botão de Dicas</span>
+            <input
+              type="checkbox"
+              checked={settings.showHints}
+              onChange={() => toggleSetting("showHints")}
+              className="w-6 h-6 accent-yellow-500"
+            />
+          </label>
+          <label className="flex justify-between items-center text-white font-medium">
+            <span>📳 Vibração (Tátil)</span>
+            <input
+              type="checkbox"
+              checked={settings.vibration}
+              onChange={() => toggleSetting("vibration")}
+              className="w-6 h-6 accent-yellow-500"
+            />
+          </label>
+          <label className="flex justify-between items-center text-white font-medium">
+            <span>🔊 Efeitos Sonoros</span>
+            <input
+              type="checkbox"
+              checked={settings.sound}
+              onChange={() => toggleSetting("sound")}
+              className="w-6 h-6 accent-yellow-500"
+            />
+          </label>
+
+          <div className="text-white font-medium border-t border-white/10 pt-3">
+            <span className="mb-2 block">📱 Tamanho das Cartas (Celular)</span>
+            <select
+              value={settings.cardSize}
+              onChange={(e) => updateSetting("cardSize", e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
             >
-              <span className="text-xl">🤖</span> JOGAR SOZINHO
-            </button>
-            <div className="flex items-center gap-2 mb-6">
-              <div className="h-px bg-white/20 flex-1"></div>
-              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
-                Multiplayer
-              </span>
-              <div className="h-px bg-white/20 flex-1"></div>
-            </div>
-            <button
-              onClick={createRoom}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
-            >
-              CRIAR NOVA SALA
-            </button>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                placeholder="PIN"
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                maxLength={4}
-                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
-              />
-              <button
-                onClick={joinRoom}
-                className="bg-blue-600 text-white font-black px-6 py-3 rounded-xl hover:bg-blue-500 shadow-lg uppercase text-sm transition-transform active:scale-95"
-              >
-                ENTRAR
-              </button>
-            </div>
+              <option value="normal">Normal</option>
+              <option value="large">Grande (Mais visível)</option>
+            </select>
           </div>
+
+          <div className="text-white font-medium pt-1">
+            <span className="mb-2 block">🃏 Estilo do Baralho</span>
+            <select
+              value={settings.deckStyle}
+              onChange={(e) => updateSetting("deckStyle", e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
+            >
+              <option value="default">Padrão (Branco)</option>
+              <option value="dark">Modo Dark (Noturno)</option>
+              <option value="luxo">Cassino (Luxo)</option>
+            </select>
+          </div>
+
+          {/* BOTÃO PARA VOLTAR PARA A TELA INICIAL */}
+          {roomId && (
+            <button
+              onClick={exitGame}
+              className="w-full mt-4 bg-red-600 text-white font-bold py-3 rounded-xl hover:bg-red-500 transition-colors uppercase tracking-widest text-sm border border-red-400"
+            >
+              🚪 Sair da Partida
+            </button>
+          )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   const EndGameMessage = () => {
     if (!roundResult) return null;
@@ -928,16 +942,21 @@ export default function App() {
   };
 
   const CardFace = ({ card, playable, onClick, isHinted }) => {
-    const { deckStyle } = settings;
+    const { deckStyle, cardSize } = settings;
     const suitDef = SUITS[card.suit];
     const isTrump = card.suit === trumpSuit;
     const opacityClass =
       localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
+    const sym =
+      card.suit === "diamonds"
+        ? "♦"
+        : card.suit === "clubs"
+        ? "♣"
+        : SUITS[card.suit].symbol;
     const hintClass = isHinted
       ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
       : "";
 
-    // Lógica das Cores dos Temas
     let cardBg = "bg-gradient-to-br from-white to-gray-50";
     let cardBorder = "border-gray-300";
     let cardTextColor = suitDef.defaultColor;
@@ -952,15 +971,19 @@ export default function App() {
       cardTextColor = suitDef.luxoColor;
     }
 
-    const renderCenter = () => {
-      // Emojis menores para não poluir
-      if (card.label === "K")
-        return <div className="text-3xl md:text-4xl drop-shadow-sm">🤴</div>;
-      if (card.label === "Q")
-        return <div className="text-3xl md:text-4xl drop-shadow-sm">👸</div>;
-      if (card.label === "J")
-        return <div className="text-3xl md:text-4xl drop-shadow-sm">💂</div>;
+    // Aplicação do tamanho configurado
+    const sizeClasses =
+      cardSize === "large"
+        ? "w-[84px] h-[120px] md:w-28 md:h-40"
+        : "w-[72px] h-[104px] md:w-24 md:h-36";
 
+    const renderCenter = () => {
+      if (card.label === "K")
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
+      if (card.label === "Q")
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
+      if (card.label === "J")
+        return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
       const num = parseInt(card.label);
       if (!isNaN(num)) {
         let grid = "grid-cols-1";
@@ -995,7 +1018,7 @@ export default function App() {
     return (
       <div
         onClick={() => playable && !localProcessing && onClick(card)}
-        className={`w-[72px] h-[104px] md:w-24 md:h-36 ${cardBg} rounded-lg md:rounded-xl border ${cardBorder} shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-1.5 md:p-2 ${opacityClass} ${hintClass} ${
+        className={`${sizeClasses} ${cardBg} rounded-lg md:rounded-xl border ${cardBorder} shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-1.5 md:p-2 ${opacityClass} ${hintClass} ${
           playable && !localProcessing
             ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
             : ""
@@ -1006,8 +1029,6 @@ export default function App() {
         >
           {suitDef.symbol}
         </div>
-
-        {/* Cantos mais afastados do centro e menores */}
         <div
           className={`absolute top-1 left-1.5 flex flex-col items-center justify-center ${cardTextColor} z-10`}
         >
@@ -1018,11 +1039,9 @@ export default function App() {
             {suitDef.symbol}
           </span>
         </div>
-
         <div className="flex-1 flex items-center justify-center w-full mt-3 mb-2 px-1 z-10">
           {renderCenter()}
         </div>
-
         <div
           className={`absolute bottom-1 right-1.5 flex flex-col items-center justify-center rotate-180 ${cardTextColor} z-10`}
         >
@@ -1033,7 +1052,6 @@ export default function App() {
             {suitDef.symbol}
           </span>
         </div>
-
         {isTrump && (
           <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
             <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
@@ -1055,7 +1073,6 @@ export default function App() {
       textColor = suitDef.luxoColor;
       bgClass = "bg-black border-yellow-600/50";
     }
-
     return (
       <div
         className={`relative w-10 h-14 ${bgClass} rounded border shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden`}
@@ -1075,27 +1092,135 @@ export default function App() {
     );
   };
 
-  const CardBack = () => (
-    <div
-      className="w-[72px] h-[104px] md:w-24 md:h-36 bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2"
-      style={{
-        backgroundImage:
-          "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
-      }}
-    >
-      <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
-      <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
-        <span className="text-white/20 text-2xl md:text-3xl">♠</span>
-      </div>
-    </div>
-  );
-
-  if (gameState === "lobby") {
+  const CardBack = () => {
+    const { cardSize } = settings;
+    const sizeClasses =
+      cardSize === "large"
+        ? "w-[84px] h-[120px] md:w-28 md:h-40"
+        : "w-[72px] h-[104px] md:w-24 md:h-36";
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4"
+        className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2`}
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
+        }}
+      >
+        <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
+        <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
+          <span className="text-white/20 text-2xl md:text-3xl">♠</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // RENDERIZAÇÃO PRINCIPAL
+  // ============================================================================
+
+  if (!roomId) {
+    return (
+      <div
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
         translate="no"
       >
+        {/* BOTÃO E MODAL GLOBAL DE CONFIGURAÇÕES */}
+        <button
+          onClick={() => setShowSettings(true)}
+          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+        >
+          ⚙️
+        </button>
+        {showSettings && <SettingsModal />}
+
+        <div className="w-full max-w-sm flex flex-col items-center pt-8 md:pt-12 pb-24">
+          <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
+            <span className="font-sans" style={{ color: "#facc15" }}>
+              ♦
+            </span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
+              TOCO
+            </span>
+            <span className="font-sans" style={{ color: "#eab308" }}>
+              ♣
+            </span>
+          </h1>
+          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
+            Desenvolvido por Ryan Kilberth
+          </p>
+
+          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl">
+            <input
+              type="text"
+              placeholder="Seu Nome ou Apelido"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-4 mb-6 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
+            />
+            {errorMsg && (
+              <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
+                {errorMsg}
+              </p>
+            )}
+
+            <button
+              onClick={startSinglePlayer}
+              className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
+            >
+              <span className="text-xl">🤖</span> JOGAR SOZINHO
+            </button>
+
+            <div className="flex items-center gap-2 mb-6">
+              <div className="h-px bg-white/20 flex-1"></div>
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                Multiplayer
+              </span>
+              <div className="h-px bg-white/20 flex-1"></div>
+            </div>
+
+            <button
+              onClick={createRoom}
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
+            >
+              CRIAR NOVA SALA
+            </button>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="PIN"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                maxLength={4}
+                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
+              />
+              <button
+                onClick={joinRoom}
+                className="bg-blue-600 text-white font-black px-6 py-3 rounded-xl hover:bg-blue-500 shadow-lg uppercase text-sm transition-transform active:scale-95"
+              >
+                ENTRAR
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- TELA DE LOBBY (Se não for Single Player) ---
+  if (gameState === "lobby" && !isSinglePlayer) {
+    return (
+      <div
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4 relative"
+        translate="no"
+      >
+        <button
+          onClick={() => setShowSettings(true)}
+          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50"
+        >
+          ⚙️
+        </button>
+        {showSettings && <SettingsModal />}
+
         <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
           <span
             className="text-yellow-400 font-sans"
@@ -1116,6 +1241,7 @@ export default function App() {
         <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
           Desenvolvido por Ryan Kilberth
         </p>
+
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
@@ -1164,9 +1290,19 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white"
+      className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
+      {/* BOTÃO E MODAL GLOBAL DE CONFIGURAÇÕES NA MESA */}
+      <button
+        onClick={() => setShowSettings(true)}
+        className="absolute top-4 left-1/2 transform -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 text-3xl opacity-60 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50 drop-shadow-md bg-black/30 rounded-full p-1 backdrop-blur-sm"
+      >
+        ⚙️
+      </button>
+      {showSettings && <SettingsModal />}
+
+      {/* PLACAR */}
       <div className="bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl h-24 flex w-full relative z-20">
         {playersList[0] && (
           <div
@@ -1202,9 +1338,17 @@ export default function App() {
             </div>
           </div>
         )}
-        <div className="w-12 flex items-center justify-center bg-black/60 text-gray-500 font-black text-sm italic border-x border-white/10 shadow-inner">
-          VS
+
+        {/* EXIBIÇÃO DO PIN DE RECONEXÃO */}
+        <div className="w-16 flex flex-col items-center justify-center bg-black/60 text-gray-500 font-black text-sm border-x border-white/10 shadow-inner">
+          <span className="italic mb-1">VS</span>
+          {!isSinglePlayer && (
+            <span className="text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1.5 rounded">
+              {roomId}
+            </span>
+          )}
         </div>
+
         {playersList[1] && (
           <div
             className={`flex-1 flex flex-col justify-center px-4 border-l border-white/10 ${
@@ -1241,8 +1385,9 @@ export default function App() {
         )}
       </div>
 
+      {/* BALÃO DE DICA */}
       {currentHint && (
-        <div className="absolute top-32 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
+        <div className="absolute top-32 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
             <button
               onClick={() => setCurrentHint(null)}
@@ -1257,6 +1402,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MESA E BARALHO */}
       <div className="flex-1 flex flex-col items-center justify-center relative w-full">
         <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
           {showCards &&
