@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
-import { ref, onValue, set, update, get, remove } from "firebase/database";
+import { ref, onValue, set, update, get } from "firebase/database";
 
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
-// ÍCONE SVG INLINE: Leque de Cartas (Substituindo o emoji de pasta)
 const CardFanIcon = () => (
   <svg
     width="28"
@@ -23,19 +22,18 @@ const CardFanIcon = () => (
       rx="3"
       fill="white"
       stroke="#D1D5DB"
-      stroke-width="1.5"
+      strokeWidth="1.5"
     />
     <text
       x="4"
       y="9"
       fill="#DC2626"
-      font-family="sans-serif"
-      font-size="5"
-      font-weight="bold"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
     >
       ♥
     </text>
-
     <rect
       x="0"
       y="4.5"
@@ -45,20 +43,19 @@ const CardFanIcon = () => (
       transform="rotate(-15 0 4.5)"
       fill="white"
       stroke="#D1D5DB"
-      stroke-width="1.5"
+      strokeWidth="1.5"
     />
     <text
       x="1"
       y="9"
       fill="#111827"
-      font-family="sans-serif"
-      font-size="5"
-      font-weight="bold"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
       transform="rotate(-15 1 9)"
     >
       ♣
     </text>
-
     <rect
       x="12"
       y="2.5"
@@ -68,20 +65,19 @@ const CardFanIcon = () => (
       transform="rotate(15 12 2.5)"
       fill="white"
       stroke="#D1D5DB"
-      stroke-width="1.5"
+      strokeWidth="1.5"
     />
     <text
       x="13"
       y="8"
       fill="#DC2626"
-      font-family="sans-serif"
-      font-size="5"
-      font-weight="bold"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
       transform="rotate(15 13 8)"
     >
       ♦
     </text>
-
     <rect
       x="18"
       y="4.5"
@@ -91,15 +87,15 @@ const CardFanIcon = () => (
       transform="rotate(30 18 4.5)"
       fill="white"
       stroke="#D1D5DB"
-      stroke-width="1.5"
+      strokeWidth="1.5"
     />
     <text
       x="19"
       y="11"
       fill="#111827"
-      font-family="sans-serif"
-      font-size="5"
-      font-weight="bold"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
       transform="rotate(30 19 11)"
     >
       ♠
@@ -152,6 +148,189 @@ const RANKS = [
 ];
 
 const POINTS_GOAL = 31;
+
+// ============================================================================
+// COMPONENTES VISUAIS ISOLADOS (Para não gerar erros de montagem do React)
+// ============================================================================
+const CardFace = ({
+  card,
+  playable,
+  onClick,
+  isHinted,
+  trumpSuit,
+  localProcessing,
+  settings,
+}) => {
+  const { deckStyle, cardSize } = settings;
+  const suitDef = SUITS[card.suit];
+  const isTrump = card.suit === trumpSuit;
+  const opacityClass =
+    localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
+  const sym =
+    card.suit === "diamonds"
+      ? "♦"
+      : card.suit === "clubs"
+      ? "♣"
+      : SUITS[card.suit].symbol;
+  const hintClass = isHinted
+    ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105 z-20"
+    : "";
+
+  let cardBg = "bg-gradient-to-br from-white to-gray-50";
+  let cardBorder = "border-gray-300";
+  let cardTextColor = suitDef.defaultColor;
+
+  if (deckStyle === "dark") {
+    cardBg = "bg-gradient-to-br from-gray-800 to-gray-900";
+    cardBorder = "border-gray-600";
+    cardTextColor = suitDef.darkColor;
+  } else if (deckStyle === "luxo") {
+    cardBg = "bg-gradient-to-br from-black to-slate-950";
+    cardBorder = "border-yellow-600/50";
+    cardTextColor = suitDef.luxoColor;
+  }
+
+  const sizeClasses =
+    cardSize === "large"
+      ? "w-[84px] h-[120px] md:w-28 md:h-40"
+      : "w-[72px] h-[104px] md:w-24 md:h-36";
+
+  const renderCenter = () => {
+    if (card.label === "K")
+      return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
+    if (card.label === "Q")
+      return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
+    if (card.label === "J")
+      return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
+    const num = parseInt(card.label);
+    if (!isNaN(num)) {
+      let grid = "grid-cols-1";
+      if (num >= 4) grid = "grid-cols-2";
+      if (num >= 7) grid = "grid-cols-3";
+      return (
+        <div
+          className={`grid ${grid} gap-1 items-center justify-items-center h-full w-full px-1.5 ${cardTextColor}`}
+        >
+          {Array.from({ length: num }).map((_, i) => (
+            <span
+              key={i}
+              className={`text-base md:text-lg leading-none ${
+                i >= Math.ceil(num / 2) ? "rotate-180" : ""
+              }`}
+            >
+              {suitDef.symbol}
+            </span>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div
+        className={`text-5xl md:text-6xl drop-shadow-sm font-sans ${cardTextColor}`}
+      >
+        {suitDef.symbol}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      onClick={() => playable && !localProcessing && onClick(card)}
+      className={`${sizeClasses} ${cardBg} rounded-lg md:rounded-xl border ${cardBorder} shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-1.5 md:p-2 ${opacityClass} ${hintClass} ${
+        playable && !localProcessing
+          ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
+          : ""
+      }`}
+    >
+      <div
+        className={`absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans ${cardTextColor}`}
+      >
+        {suitDef.symbol}
+      </div>
+      <div
+        className={`absolute top-1 left-1.5 flex flex-col items-center justify-center ${cardTextColor} z-10`}
+      >
+        <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
+          {card.label}
+        </span>
+        <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
+          {suitDef.symbol}
+        </span>
+      </div>
+      <div className="flex-1 flex items-center justify-center w-full mt-3 mb-2 px-1 z-10">
+        {renderCenter()}
+      </div>
+      <div
+        className={`absolute bottom-1 right-1.5 flex flex-col items-center justify-center rotate-180 ${cardTextColor} z-10`}
+      >
+        <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
+          {card.label}
+        </span>
+        <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
+          {suitDef.symbol}
+        </span>
+      </div>
+      {isTrump && (
+        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
+          <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MiniCard = ({ card, settings }) => {
+  const { deckStyle } = settings;
+  const suitDef = SUITS[card.suit];
+  let textColor = suitDef.defaultColor;
+  let bgClass = "bg-white border-gray-300";
+  if (deckStyle === "dark") {
+    textColor = suitDef.darkColor;
+    bgClass = "bg-gray-800 border-gray-600";
+  } else if (deckStyle === "luxo") {
+    textColor = suitDef.luxoColor;
+    bgClass = "bg-black border-yellow-600/50";
+  }
+  return (
+    <div
+      className={`relative w-10 h-14 ${bgClass} rounded border shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden`}
+    >
+      <div
+        className={`absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl font-sans ${textColor}`}
+      >
+        {suitDef.symbol}
+      </div>
+      <span className={`text-xs font-bold leading-none z-10 ${textColor}`}>
+        {card.label}
+      </span>
+      <span className={`text-xl z-10 font-sans ${textColor}`}>
+        {suitDef.symbol}
+      </span>
+    </div>
+  );
+};
+
+const CardBack = ({ settings }) => {
+  const { cardSize } = settings;
+  const sizeClasses =
+    cardSize === "large"
+      ? "w-[84px] h-[120px] md:w-28 md:h-40"
+      : "w-[72px] h-[104px] md:w-24 md:h-36";
+  return (
+    <div
+      className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2`}
+      style={{
+        backgroundImage:
+          "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
+      }}
+    >
+      <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
+      <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
+        <span className="text-white/20 text-2xl md:text-3xl">♠</span>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   // ============================================================================
@@ -210,7 +389,6 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // GERADOR DE EFEITOS SONOROS (Sintetizador Web Nativo)
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
@@ -223,7 +401,6 @@ export default function App() {
       gain.connect(ctx.destination);
 
       if (type === "card") {
-        // Som curto e seco da carta
         osc.type = "sine";
         osc.frequency.setValueAtTime(400, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
@@ -232,7 +409,6 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
       } else if (type === "win") {
-        // Som alegre de vitória
         osc.type = "triangle";
         osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.setValueAtTime(554, ctx.currentTime + 0.1);
@@ -242,7 +418,6 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.5);
       } else if (type === "lose") {
-        // Som triste de perder vida
         osc.type = "sawtooth";
         osc.frequency.setValueAtTime(250, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.4);
@@ -330,8 +505,6 @@ export default function App() {
     if (snapshot.exists()) {
       const currentRoomData = snapshot.val();
       const existingPlayers = Object.values(currentRoomData.players || {});
-
-      // SISTEMA DE RECONEXÃO: Busca se o nome já existe na sala
       const matchedPlayer = existingPlayers.find(
         (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
       );
@@ -340,13 +513,11 @@ export default function App() {
       let newMe;
 
       if (matchedPlayer) {
-        // Se o nome existe, o jogador recupera a cadeira dele!
         myId = matchedPlayer.id;
         newMe = matchedPlayer;
       } else if (existingPlayers.length >= 2) {
         return setErrorMsg("A sala já está cheia!");
       } else {
-        // Se não existe e tem vaga, entra como novo jogador
         myId = `player_${Date.now()}`;
         newMe = { id: myId, name: playerName, isHost: false };
         await update(ref(database, `rooms/${pinInput}/players`), {
@@ -656,7 +827,7 @@ export default function App() {
         );
 
         if (cardToPlay) {
-          playSoundEffect("card"); // Computador também faz barulho!
+          playSoundEffect("card");
           const newHand = botHand.filter((c) => c.id !== cardToPlay.id);
           const newTable = [
             ...stateRef.current.tableCards,
@@ -750,7 +921,7 @@ export default function App() {
     if (tableCards.some((tc) => tc.playerId === me.id)) return;
 
     if (settings.vibration && navigator.vibrate) navigator.vibrate(40);
-    playSoundEffect("card"); // Toca o som!
+    playSoundEffect("card");
 
     setLocalProcessing(true);
     setCurrentHint(null);
@@ -896,11 +1067,63 @@ export default function App() {
     syncState(updates);
   };
 
+  // Função in-line limpa para retornar mensagem de fim de jogo sem risco de quebra
+  const getEndGameMessage = () => {
+    if (!roundResult) return null;
+    const iAmWinner = me?.id === roundResult.winnerId;
+    const iAmLoser = me?.id === roundResult.loserId;
+    if (roundResult.type === "escaped") {
+      if (iAmWinner)
+        return (
+          <span className="text-green-400 drop-shadow-md">
+            UFA! ME LIVREI! 😅
+          </span>
+        );
+      if (iAmLoser)
+        return (
+          <span className="text-yellow-400 drop-shadow-md">
+            ELE SE LIVROU! O TOCO AGORA É SEU! 🫵
+          </span>
+        );
+      return <span>O ALVO ESCAPOU!</span>;
+    }
+    if (roundResult.type === "life_lost") {
+      if (iAmLoser)
+        return (
+          <span className="text-red-400 drop-shadow-md">
+            PERDI UMA VIDA! 💔
+          </span>
+        );
+      if (iAmWinner)
+        return (
+          <span className="text-green-400 drop-shadow-md">
+            VOCÊ TIROU UMA VIDA DELE! ⚔️
+          </span>
+        );
+      return <span>ALVO PERDEU VIDA!</span>;
+    }
+    if (roundResult.type === "toco_confirmed") {
+      if (iAmLoser)
+        return (
+          <span className="text-red-600 drop-shadow-md">
+            QUE PENA! PEGUEI O TOCO. 🪵
+          </span>
+        );
+      if (iAmWinner)
+        return (
+          <span className="text-yellow-400 drop-shadow-md">
+            AÊ! VOCÊ DEU UM TOCO NELE! 🏆
+          </span>
+        );
+      return <span>TOCO CONFIRMADO!</span>;
+    }
+    return null;
+  };
+
   // ============================================================================
-  // 5. COMPONENTES VISUAIS REUTILIZÁVEIS
+  // RENDERIZAÇÃO PRINCIPAL E TELAS VISUAIS
   // ============================================================================
 
-  // MODAL DE CONFIGURAÇÕES GLOBAL
   const SettingsModal = () => (
     <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
@@ -913,7 +1136,6 @@ export default function App() {
             &times;
           </button>
         </div>
-
         <div className="flex flex-col gap-4">
           <label className="flex justify-between items-center text-white font-medium">
             <span>💾 Lembrar meu Nome</span>
@@ -951,9 +1173,8 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
-
           <div className="text-white font-medium border-t border-white/10 pt-3">
-            <span className="mb-2 block">📱 Tamanho das Cartas (Celular)</span>
+            <span className="mb-2 block">📱 Tamanho das Cartas</span>
             <select
               value={settings.cardSize}
               onChange={(e) => updateSetting("cardSize", e.target.value)}
@@ -963,7 +1184,6 @@ export default function App() {
               <option value="large">Grande (Mais visível)</option>
             </select>
           </div>
-
           <div className="text-white font-medium pt-1">
             <span className="mb-2 block">🃏 Estilo do Baralho</span>
             <select
@@ -976,12 +1196,10 @@ export default function App() {
               <option value="luxo">Cassino (Luxo)</option>
             </select>
           </div>
-
-          {/* BOTÃO PARA VOLTAR PARA A TELA INICIAL */}
           {roomId && (
             <button
               onClick={exitGame}
-              className="w-full mt-4 bg-red-600 text-white font-bold py-3 rounded-xl hover:bg-red-500 transition-colors uppercase tracking-widest text-sm border border-red-400"
+              className="w-full mt-4 bg-red-600/90 text-white font-bold py-3 rounded-xl hover:bg-red-500 transition-colors uppercase tracking-widest text-sm border border-red-400"
             >
               🚪 Sair da Partida
             </button>
@@ -991,190 +1209,13 @@ export default function App() {
     </div>
   );
 
-  const CardFace = ({ card, playable, onClick, isHinted }) => {
-    const { deckStyle, cardSize } = settings;
-    const suitDef = SUITS[card.suit];
-    const isTrump = card.suit === trumpSuit;
-    const opacityClass =
-      localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
-    const sym =
-      card.suit === "diamonds"
-        ? "♦"
-        : card.suit === "clubs"
-        ? "♣"
-        : SUITS[card.suit].symbol;
-    const hintClass = isHinted
-      ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105"
-      : "";
-
-    let cardBg = "bg-gradient-to-br from-white to-gray-50";
-    let cardBorder = "border-gray-300";
-    let cardTextColor = suitDef.defaultColor;
-
-    if (deckStyle === "dark") {
-      cardBg = "bg-gradient-to-br from-gray-800 to-gray-900";
-      cardBorder = "border-gray-600";
-      cardTextColor = suitDef.darkColor;
-    } else if (deckStyle === "luxo") {
-      cardBg = "bg-gradient-to-br from-black to-slate-950";
-      cardBorder = "border-yellow-600/50";
-      cardTextColor = suitDef.luxoColor;
-    }
-
-    // Aplicação do tamanho configurado
-    const sizeClasses =
-      cardSize === "large"
-        ? "w-[84px] h-[120px] md:w-28 md:h-40"
-        : "w-[72px] h-[104px] md:w-24 md:h-36";
-
-    const renderCenter = () => {
-      if (card.label === "K")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">🤴</div>;
-      if (card.label === "Q")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">👸</div>;
-      if (card.label === "J")
-        return <div className="text-4xl md:text-5xl drop-shadow-sm">💂</div>;
-      const num = parseInt(card.label);
-      if (!isNaN(num)) {
-        let grid = "grid-cols-1";
-        if (num >= 4) grid = "grid-cols-2";
-        if (num >= 7) grid = "grid-cols-3";
-        return (
-          <div
-            className={`grid ${grid} gap-1 items-center justify-items-center h-full w-full px-1.5 ${cardTextColor}`}
-          >
-            {Array.from({ length: num }).map((_, i) => (
-              <span
-                key={i}
-                className={`text-base md:text-lg leading-none ${
-                  i >= Math.ceil(num / 2) ? "rotate-180" : ""
-                }`}
-              >
-                {suitDef.symbol}
-              </span>
-            ))}
-          </div>
-        );
-      }
-      return (
-        <div
-          className={`text-5xl md:text-6xl drop-shadow-sm font-sans ${cardTextColor}`}
-        >
-          {suitDef.symbol}
-        </div>
-      );
-    };
-
-    return (
-      <div
-        onClick={() => playable && !localProcessing && onClick(card)}
-        className={`${sizeClasses} ${cardBg} rounded-lg md:rounded-xl border ${cardBorder} shadow-xl flex flex-col items-center justify-between select-none relative transition-all duration-300 transform overflow-hidden p-1.5 md:p-2 ${opacityClass} ${hintClass} ${
-          playable && !localProcessing
-            ? "cursor-pointer hover:-translate-y-6 hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:ring-4 ring-yellow-400 z-10 scale-105"
-            : ""
-        }`}
-      >
-        <div
-          className={`absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-8xl md:text-[100px] overflow-hidden font-sans ${cardTextColor}`}
-        >
-          {suitDef.symbol}
-        </div>
-        <div
-          className={`absolute top-1 left-1.5 flex flex-col items-center justify-center ${cardTextColor} z-10`}
-        >
-          <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
-            {card.label}
-          </span>
-          <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
-            {suitDef.symbol}
-          </span>
-        </div>
-        <div className="flex-1 flex items-center justify-center w-full mt-3 mb-2 px-1 z-10">
-          {renderCenter()}
-        </div>
-        <div
-          className={`absolute bottom-1 right-1.5 flex flex-col items-center justify-center rotate-180 ${cardTextColor} z-10`}
-        >
-          <span className="font-bold text-[12px] md:text-sm tracking-tighter leading-none">
-            {card.label}
-          </span>
-          <span className="text-[11px] md:text-xs mt-[2px] leading-none font-sans">
-            {suitDef.symbol}
-          </span>
-        </div>
-        {isTrump && (
-          <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-400 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20">
-            <div className="w-2.5 h-2.5 bg-yellow-600 rounded-full animate-pulse"></div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const MiniCard = ({ card }) => {
-    const { deckStyle } = settings;
-    const suitDef = SUITS[card.suit];
-    let textColor = suitDef.defaultColor;
-    let bgClass = "bg-white border-gray-300";
-    if (deckStyle === "dark") {
-      textColor = suitDef.darkColor;
-      bgClass = "bg-gray-800 border-gray-600";
-    } else if (deckStyle === "luxo") {
-      textColor = suitDef.luxoColor;
-      bgClass = "bg-black border-yellow-600/50";
-    }
-    return (
-      <div
-        className={`relative w-10 h-14 ${bgClass} rounded border shadow-sm flex flex-col items-center justify-center p-1 overflow-hidden`}
-      >
-        <div
-          className={`absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-4xl font-sans ${textColor}`}
-        >
-          {suitDef.symbol}
-        </div>
-        <span className={`text-xs font-bold leading-none z-10 ${textColor}`}>
-          {card.label}
-        </span>
-        <span className={`text-xl z-10 font-sans ${textColor}`}>
-          {suitDef.symbol}
-        </span>
-      </div>
-    );
-  };
-
-  const CardBack = () => {
-    const { cardSize } = settings;
-    const sizeClasses =
-      cardSize === "large"
-        ? "w-[84px] h-[120px] md:w-28 md:h-40"
-        : "w-[72px] h-[104px] md:w-24 md:h-36";
-    return (
-      <div
-        className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2`}
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
-        }}
-      >
-        <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
-        <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
-          <span className="text-white/20 text-2xl md:text-3xl">♠</span>
-        </div>
-      </div>
-    );
-  };
-
-  // ============================================================================
-  // RENDERIZAÇÃO PRINCIPAL
-  // ============================================================================
-
+  // --- TELA INICIAL ---
   if (!roomId) {
     return (
       <div
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
         translate="no"
       >
-        {/* BOTÃO E MODAL GLOBAL DE CONFIGURAÇÕES */}
         <button
           onClick={() => setShowSettings(true)}
           className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
@@ -1230,7 +1271,7 @@ export default function App() {
 
             <button
               onClick={createRoom}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase trackingest text-sm transition-transform active:scale-95"
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
             >
               CRIAR NOVA SALA
             </button>
@@ -1241,7 +1282,7 @@ export default function App() {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
                 maxLength={4}
-                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl trackingest"
+                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
               />
               <button
                 onClick={joinRoom}
@@ -1256,7 +1297,7 @@ export default function App() {
     );
   }
 
-  // --- TELA DE LOBBY ---
+  // --- TELA DE LOBBY MULTIPLAYER ---
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
@@ -1295,7 +1336,7 @@ export default function App() {
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
-            <span className="font-mono text-2xl trackingest bg-white/30 px-2 rounded">
+            <span className="font-mono text-2xl tracking-widest bg-white/30 px-2 rounded">
               {roomId}
             </span>
           </div>
@@ -1316,7 +1357,7 @@ export default function App() {
           {me?.isHost && playersList.length >= 2 ? (
             <button
               onClick={startGameFirstTime}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-4 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] transition-all transform hover:scale-105 active:scale-95 uppercase trackingest text-lg"
+              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-4 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] transition-all transform hover:scale-105 active:scale-95 uppercase tracking-widest text-lg"
             >
               INICIAR JOGO
             </button>
@@ -1343,99 +1384,106 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
-      {/* CORREÇÃO: Movi o botão para top-28 para descer ele (Placar tem h-24) */}
+      {/* BOTÃO DA ENGRENAGEM (Agora de canto e discreto) */}
       <button
         onClick={() => setShowSettings(true)}
-        className="absolute top-28 left-1/2 transform -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 text-3xl opacity-60 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50 drop-shadow-md bg-black/30 rounded-full p-1 backdrop-blur-sm"
+        className="absolute top-[104px] right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
       >
         ⚙️
       </button>
       {showSettings && <SettingsModal />}
 
-      {/* PLACAR */}
-      <div className="bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl h-24 flex w-full relative z-20">
-        {playersList[0] && (
-          <div
-            className={`flex-1 flex flex-col justify-center px-4 border-r border-white/10 ${
-              turn === playersList[0].id ? "bg-white/5" : ""
-            }`}
-          >
-            <div className="flex justify-between items-center">
-              <span className="font-bold truncate text-lg md:text-xl drop-shadow">
-                {playersList[0].id === "bot_1"
-                  ? "🤖 Computador"
-                  : playersList[0].name}
-              </span>
-              {tocoTarget === playersList[0].id && (
-                <div className="flex gap-1 text-lg drop-shadow">
-                  {[...Array(lives)].map((_, i) => (
-                    <span key={i}>❤️</span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-end justify-between mt-1">
-              <span className="text-yellow-400 font-mono text-3xl font-bold drop-shadow-md">
-                {roundScores[playersList[0].id] || 0}
-                <span className="text-sm text-gray-400 font-sans">/31</span>
-              </span>
-              <span className="text-xs text-gray-400 uppercase tracking-wide">
-                Tocos:{" "}
-                <span className="text-white font-bold text-sm bg-white/10 px-2 py-0.5 rounded">
-                  {gamePoints[playersList[0].id] || 0}
-                </span>
-              </span>
-            </div>
+      {/* PLACAR BLINDADO (CSS GRID PARA NUNCA SE MOVER) */}
+      <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
+        {/* Esquerda: Oponente / Computador */}
+        <div
+          className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
+            turn === playersList[0]?.id ? "bg-white/5" : ""
+          }`}
+        >
+          <div className="flex justify-between items-center w-full gap-2">
+            <span className="font-bold text-base md:text-xl drop-shadow truncate">
+              {playersList[0]?.id === "bot_1"
+                ? "🤖 Computador"
+                : playersList[0]?.name}
+            </span>
+            {tocoTarget === playersList[0]?.id && (
+              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
+                {[...Array(lives)].map((_, i) => (
+                  <span key={i}>❤️</span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          <div className="flex items-end justify-between mt-1">
+            <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
+              {roundScores[playersList[0]?.id] || 0}
+              <span className="text-xs md:text-sm text-gray-400 font-sans">
+                /31
+              </span>
+            </span>
+            <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
+              Tocos:{" "}
+              <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
+                {gamePoints[playersList[0]?.id] || 0}
+              </span>
+            </span>
+          </div>
+        </div>
 
-        {/* EXIBIÇÃO DO PIN DE RECONEXÃO */}
-        <div className="w-16 flex flex-col items-center justify-center bg-black/60 text-gray-500 font-black text-sm border-x border-white/10 shadow-inner">
-          <span className="italic mb-1">VS</span>
+        {/* Centro: VS + PIN DE RECONEXÃO FIXO */}
+        <div className="w-14 md:w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
+          <span className="text-gray-500 font-black text-sm italic mb-1">
+            VS
+          </span>
           {!isSinglePlayer && (
-            <span className="text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1.5 rounded">
+            <span
+              className="text-[9px] md:text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
+              title="PIN da Sala"
+            >
               {roomId}
             </span>
           )}
         </div>
 
-        {playersList[1] && (
-          <div
-            className={`flex-1 flex flex-col justify-center px-4 border-l border-white/10 ${
-              turn === playersList[1].id ? "bg-white/5" : ""
-            }`}
-          >
-            <div className="flex justify-between items-center flex-row-reverse">
-              <span className="font-bold truncate text-lg md:text-xl drop-shadow">
-                {playersList[1].id === "bot_1"
-                  ? "🤖 Computador"
-                  : playersList[1].name}
-              </span>
-              {tocoTarget === playersList[1].id && (
-                <div className="flex gap-1 text-lg drop-shadow">
-                  {[...Array(lives)].map((_, i) => (
-                    <span key={i}>❤️</span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-end justify-between mt-1 flex-row-reverse">
-              <span className="text-yellow-400 font-mono text-3xl font-bold drop-shadow-md">
-                {roundScores[playersList[1].id] || 0}
-                <span className="text-sm text-gray-400 font-sans">/31</span>
-              </span>
-              <span className="text-xs text-gray-400 uppercase tracking-wide">
-                Tocos:{" "}
-                <span className="text-white font-bold text-sm bg-white/10 px-2 py-0.5 rounded">
-                  {gamePoints[playersList[1].id] || 0}
-                </span>
-              </span>
-            </div>
+        {/* Direita: Jogador */}
+        <div
+          className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
+            turn === playersList[1]?.id ? "bg-white/5" : ""
+          }`}
+        >
+          <div className="flex justify-between items-center flex-row-reverse w-full gap-2">
+            <span className="font-bold text-base md:text-xl drop-shadow truncate text-right">
+              {playersList[1]?.id === "bot_1"
+                ? "🤖 Computador"
+                : playersList[1]?.name}
+            </span>
+            {tocoTarget === playersList[1]?.id && (
+              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
+                {[...Array(lives)].map((_, i) => (
+                  <span key={i}>❤️</span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          <div className="flex items-end justify-between mt-1 flex-row-reverse">
+            <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
+              {roundScores[playersList[1]?.id] || 0}
+              <span className="text-xs md:text-sm text-gray-400 font-sans">
+                /31
+              </span>
+            </span>
+            <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
+              Tocos:{" "}
+              <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
+                {gamePoints[playersList[1]?.id] || 0}
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* BALÃO DE DICA */}
+      {/* BALÃO DE DICA DIRETO */}
       {currentHint && (
         <div className="absolute top-32 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -1457,7 +1505,7 @@ export default function App() {
         <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
           {showCards &&
             Array.from({ length: opHandCount }).map((_, i) => (
-              <CardBack key={i} />
+              <CardBack key={i} settings={settings} />
             ))}
         </div>
         <div className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4">
@@ -1490,7 +1538,12 @@ export default function App() {
                 key={tc.card.id}
                 className="flex flex-col items-center animate-bounce"
               >
-                <CardFace card={tc.card} playable={false} />
+                <CardFace
+                  card={tc.card}
+                  playable={false}
+                  settings={settings}
+                  trumpSuit={trumpSuit}
+                />
                 <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
                   {playersList.find((p) => p.id === tc.playerId)?.id === "bot_1"
                     ? "Computador"
@@ -1521,7 +1574,6 @@ export default function App() {
         {showCards && (
           <>
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
-              {/* CORREÇÃO: Mudei o ícone para o leque SVG, mantendo-o pequeno no canto */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -1553,7 +1605,7 @@ export default function App() {
 
         <div className="mb-4 h-10 flex items-center justify-center">
           {turn === me?.id ? (
-            <span className="bg-yellow-400 text-black font-black px-8 py-2 md:py-3 rounded-full animate-pulse shadow-[0_0_25px_rgba(250,204,21,0.5)] border-2 border-white trackingest text-sm md:text-base uppercase cursor-default">
+            <span className="bg-yellow-400 text-black font-black px-8 py-2 md:py-3 rounded-full animate-pulse shadow-[0_0_25px_rgba(250,204,21,0.5)] border-2 border-white tracking-widest text-sm md:text-base uppercase cursor-default">
               SUA VEZ DE JOGAR
             </span>
           ) : (
@@ -1576,6 +1628,9 @@ export default function App() {
                   playable={turn === me?.id}
                   onClick={handleCardClick}
                   isHinted={currentHint?.cardId === card.id}
+                  settings={settings}
+                  trumpSuit={trumpSuit}
+                  localProcessing={localProcessing}
                 />
               </div>
             ))}
@@ -1605,7 +1660,7 @@ export default function App() {
                     >
                       {SUITS[s].symbol}
                     </span>
-                    <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase trackingest">
+                    <span className="text-xs font-bold text-gray-400 group-hover:text-yellow-600 uppercase tracking-widest">
                       {SUITS[s].name}
                     </span>
                   </button>
@@ -1664,7 +1719,7 @@ export default function App() {
                   </div>
                   <div className="flex gap-4">
                     {trick.cards.map((c) => (
-                      <MiniCard key={c.id} card={c} />
+                      <MiniCard key={c.id} card={c} settings={settings} />
                     ))}
                   </div>
                 </div>
@@ -1679,12 +1734,12 @@ export default function App() {
           <div className="bg-gradient-to-br from-gray-900 to-black p-1 rounded-3xl shadow-[0_0_80px_rgba(234,179,8,0.4)] max-w-sm w-full border border-gray-700">
             <div className="bg-gray-900/50 backdrop-blur-md p-10 rounded-[22px] text-center overflow-visible">
               <div className="text-3xl font-black text-white mb-8 uppercase flex flex-col gap-3 leading-tight tracking-wide drop-shadow-md overflow-visible">
-                <EndGameMessage />
+                {getEndGameMessage()}
               </div>
               {me?.isHost ? (
                 <button
                   onClick={() => startNewHand(tocoTarget)}
-                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-extrabold py-5 px-8 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] uppercase trackingest transition-all transform hover:scale-105 active:scale-95 text-lg"
+                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-extrabold py-5 px-8 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] uppercase tracking-widest transition-all transform hover:scale-105 active:scale-95 text-lg"
                 >
                   Próxima Mão
                 </button>
