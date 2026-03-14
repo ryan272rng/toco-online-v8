@@ -5,7 +5,6 @@ import { ref, onValue, set, update, get } from "firebase/database";
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
-// ÍCONE SVG: Leque de Cartas (ViewBox ajustado para NÃO cortar as pontas)
 const CardFanIcon = () => (
   <svg
     width="34"
@@ -167,12 +166,6 @@ const CardFace = ({
   const isTrump = card.suit === trumpSuit;
   const opacityClass =
     localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
-  const sym =
-    card.suit === "diamonds"
-      ? "♦"
-      : card.suit === "clubs"
-      ? "♣"
-      : SUITS[card.suit].symbol;
   const hintClass = isHinted
     ? "ring-4 ring-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.8)] -translate-y-4 scale-105 z-20"
     : "";
@@ -390,6 +383,9 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // ============================================================================
+  // MOTOR DE ÁUDIO ATUALIZADO (Com Sons de Mão Ganha/Perdida)
+  // ============================================================================
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
@@ -410,6 +406,7 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
       } else if (type === "win") {
+        // Vitória do Jogo/Toco
         osc.type = "triangle";
         osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.setValueAtTime(554, ctx.currentTime + 0.1);
@@ -419,6 +416,7 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.5);
       } else if (type === "lose") {
+        // Derrota do Jogo/Toco
         osc.type = "sawtooth";
         osc.frequency.setValueAtTime(250, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.4);
@@ -426,6 +424,24 @@ export default function App() {
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.4);
+      } else if (type === "trick_win") {
+        // NOVO: Ganhou a Mão (Plim-Plim feliz)
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // Dó
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // Mi
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      } else if (type === "trick_lose") {
+        // NOVO: Perdeu a Mão (Blop triste)
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.setValueAtTime(200, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
       }
     } catch (e) {
       console.log(e);
@@ -794,7 +810,6 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
-  // Lógica do Computador
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
     const bot = playersList.find((p) => p.id !== me?.id);
@@ -984,6 +999,15 @@ export default function App() {
     const winnerId = p1Power > p2Power ? p1.playerId : p2.playerId;
     const pts =
       getCardPoints(p1.card, currentT) + getCardPoints(p2.card, currentT);
+
+    // ==========================================
+    // NOVO: TOCAR O SOM DEPENDENDO DE QUEM GANHOU A MÃO
+    // ==========================================
+    if (winnerId === me?.id) {
+      playSoundEffect("trick_win");
+    } else {
+      playSoundEffect("trick_lose");
+    }
 
     const newScores = { ...currentRS };
     newScores[winnerId] = (newScores[winnerId] || 0) + pts;
@@ -1223,7 +1247,6 @@ export default function App() {
         </button>
         {showSettings && <SettingsModal />}
 
-        {/* Centralizado automaticamente graças ao justify-center no pai */}
         <div className="w-full max-w-sm flex flex-col items-center">
           <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
             <span className="font-sans" style={{ color: "#facc15" }}>
@@ -1297,7 +1320,6 @@ export default function App() {
     );
   }
 
-  // --- TELA DE LOBBY MULTIPLAYER ---
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
@@ -1384,7 +1406,6 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
-      {/* BOTÃO DA ENGRENAGEM - POSICIONADO MAIS PARA BAIXO E DIREITA */}
       <button
         onClick={() => setShowSettings(true)}
         className="absolute top-28 right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
@@ -1393,7 +1414,6 @@ export default function App() {
       </button>
       {showSettings && <SettingsModal />}
 
-      {/* PLACAR BLINDADO CSS GRID */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
@@ -1480,7 +1500,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* BALÃO DE DICA - DESCIDO PARA TOP-44 */}
       {currentHint && (
         <div className="absolute top-44 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -1497,7 +1516,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MESA E BARALHO */}
       <div className="flex-1 flex flex-col items-center justify-center relative w-full">
         <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
           {showCards &&
@@ -1576,7 +1594,6 @@ export default function App() {
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
               >
                 <CardFanIcon />
-                {/* TEXTO ATUALIZADO */}
                 <span className="text-[10px] md:text-xs font-bold tracking-wider">
                   Mãos ({myTricks.length})
                 </span>
@@ -1681,7 +1698,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: HISTÓRICO DAS MÃOS (TEXTO ATUALIZADO) */}
       {showHistory && (
         <div className="absolute inset-0 bg-black/95 z-[60] flex flex-col items-center p-6 overflow-y-auto backdrop-blur-md">
           <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4 z-10">
