@@ -5,11 +5,12 @@ import { ref, onValue, set, update, get } from "firebase/database";
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
+// ÍCONE SVG: Leque de Cartas (ViewBox ajustado para NÃO cortar as pontas)
 const CardFanIcon = () => (
   <svg
-    width="28"
-    height="28"
-    viewBox="0 0 28 28"
+    width="34"
+    height="34"
+    viewBox="-2 -2 38 38"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     className="drop-shadow-lg opacity-90 mb-1"
@@ -150,7 +151,7 @@ const RANKS = [
 const POINTS_GOAL = 31;
 
 // ============================================================================
-// COMPONENTES VISUAIS ISOLADOS (Para não gerar erros de montagem do React)
+// COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 const CardFace = ({
   card,
@@ -1067,7 +1068,6 @@ export default function App() {
     syncState(updates);
   };
 
-  // Função in-line limpa para retornar mensagem de fim de jogo sem risco de quebra
   const getEndGameMessage = () => {
     if (!roundResult) return null;
     const iAmWinner = me?.id === roundResult.winnerId;
@@ -1121,9 +1121,8 @@ export default function App() {
   };
 
   // ============================================================================
-  // RENDERIZAÇÃO PRINCIPAL E TELAS VISUAIS
+  // 5. COMPONENTES VISUAIS REUTILIZÁVEIS E TELAS
   // ============================================================================
-
   const SettingsModal = () => (
     <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
@@ -1213,7 +1212,7 @@ export default function App() {
   if (!roomId) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center font-sans p-4 overflow-y-auto relative"
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center font-sans p-4 relative"
         translate="no"
       >
         <button
@@ -1224,7 +1223,8 @@ export default function App() {
         </button>
         {showSettings && <SettingsModal />}
 
-        <div className="w-full max-w-sm flex flex-col items-center pt-8 md:pt-12 pb-24">
+        {/* Centralizado automaticamente graças ao justify-center no pai */}
+        <div className="w-full max-w-sm flex flex-col items-center">
           <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
             <span className="font-sans" style={{ color: "#facc15" }}>
               ♦
@@ -1384,18 +1384,17 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
-      {/* BOTÃO DA ENGRENAGEM (Agora de canto e discreto) */}
+      {/* BOTÃO DA ENGRENAGEM - POSICIONADO MAIS PARA BAIXO E DIREITA */}
       <button
         onClick={() => setShowSettings(true)}
-        className="absolute top-[104px] right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
+        className="absolute top-28 right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
       >
         ⚙️
       </button>
       {showSettings && <SettingsModal />}
 
-      {/* PLACAR BLINDADO (CSS GRID PARA NUNCA SE MOVER) */}
+      {/* PLACAR BLINDADO CSS GRID */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
-        {/* Esquerda: Oponente / Computador */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
             turn === playersList[0]?.id ? "bg-white/5" : ""
@@ -1431,7 +1430,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Centro: VS + PIN DE RECONEXÃO FIXO */}
         <div className="w-14 md:w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
@@ -1446,7 +1444,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Direita: Jogador */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
             turn === playersList[1]?.id ? "bg-white/5" : ""
@@ -1483,9 +1480,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* BALÃO DE DICA DIRETO */}
+      {/* BALÃO DE DICA - DESCIDO PARA TOP-44 */}
       {currentHint && (
-        <div className="absolute top-32 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
+        <div className="absolute top-44 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
             <button
               onClick={() => setCurrentHint(null)}
@@ -1579,8 +1576,9 @@ export default function App() {
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
               >
                 <CardFanIcon />
+                {/* TEXTO ATUALIZADO */}
                 <span className="text-[10px] md:text-xs font-bold tracking-wider">
-                  Pilha ({myTricks.length})
+                  Mãos ({myTricks.length})
                 </span>
               </button>
             </div>
@@ -1683,11 +1681,12 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL: HISTÓRICO DAS MÃOS (TEXTO ATUALIZADO) */}
       {showHistory && (
         <div className="absolute inset-0 bg-black/95 z-[60] flex flex-col items-center p-6 overflow-y-auto backdrop-blur-md">
           <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4 z-10">
             <h2 className="text-3xl font-black text-yellow-400 drop-shadow">
-              Sua Pilha 🗂️
+              Suas Mãos 🗂️
             </h2>
             <button
               onClick={() => setShowHistory(false)}
