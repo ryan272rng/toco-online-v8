@@ -383,9 +383,6 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // ============================================================================
-  // MOTOR DE ÁUDIO ATUALIZADO (Com Sons de Mão Ganha/Perdida)
-  // ============================================================================
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
@@ -406,7 +403,6 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
       } else if (type === "win") {
-        // Vitória do Jogo/Toco
         osc.type = "triangle";
         osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.setValueAtTime(554, ctx.currentTime + 0.1);
@@ -416,7 +412,6 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.5);
       } else if (type === "lose") {
-        // Derrota do Jogo/Toco
         osc.type = "sawtooth";
         osc.frequency.setValueAtTime(250, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.4);
@@ -425,16 +420,14 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.4);
       } else if (type === "trick_win") {
-        // NOVO: Ganhou a Mão (Plim-Plim feliz)
         osc.type = "sine";
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // Dó
-        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // Mi
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.3, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.2);
       } else if (type === "trick_lose") {
-        // NOVO: Perdeu a Mão (Blop triste)
         osc.type = "triangle";
         osc.frequency.setValueAtTime(300, ctx.currentTime);
         osc.frequency.setValueAtTime(200, ctx.currentTime + 0.1);
@@ -1000,9 +993,6 @@ export default function App() {
     const pts =
       getCardPoints(p1.card, currentT) + getCardPoints(p2.card, currentT);
 
-    // ==========================================
-    // NOVO: TOCAR O SOM DEPENDENDO DE QUEM GANHOU A MÃO
-    // ==========================================
     if (winnerId === me?.id) {
       playSoundEffect("trick_win");
     } else {
@@ -1232,11 +1222,11 @@ export default function App() {
     </div>
   );
 
-  // --- TELA INICIAL ---
+  // --- TELA INICIAL (ATUALIZADA PARA NÃO BUGAR O TECLADO) ---
   if (!roomId) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center font-sans p-4 relative"
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-12 md:pt-24 pb-32 font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
         <button
@@ -1263,7 +1253,7 @@ export default function App() {
             Desenvolvido por Ryan Kilberth
           </p>
 
-          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl">
+          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8">
             <input
               type="text"
               placeholder="Seu Nome ou Apelido"
@@ -1323,7 +1313,7 @@ export default function App() {
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-center text-white font-sans p-4 relative"
+        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-16 md:pt-24 pb-32 text-white font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
         <button
@@ -1355,7 +1345,7 @@ export default function App() {
           Desenvolvido por Ryan Kilberth
         </p>
 
-        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible">
+        <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible mb-8">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
             <span className="font-mono text-2xl tracking-widest bg-white/30 px-2 rounded">
