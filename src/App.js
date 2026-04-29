@@ -160,7 +160,6 @@ const POINTS_GOAL = 31;
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 
-// NOVO: COMPONENTE DE AVATAR LEVE
 const PlayerAvatar = ({ src, name, size = "md" }) => {
   const dim =
     size === "lg"
@@ -373,7 +372,6 @@ export default function App() {
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // NOVO ESTADO: Foto de Perfil (Base64)
   const [avatarBase64, setAvatarBase64] = useState("");
 
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
@@ -383,11 +381,12 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
 
+  // NOVOS ESTADOS PARA REAÇÕES (EMOJIS)
+  const [showEmotes, setShowEmotes] = useState(false);
+  const [activeReaction, setActiveReaction] = useState(null);
+
   const fileInputRef = useRef(null);
 
-  // ============================================================================
-  // ESTADOS DE CONFIGURAÇÃO E ÁUDIO
-  // ============================================================================
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
@@ -405,11 +404,9 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("tocoSettings", JSON.stringify(settings));
-    if (settings.saveName && playerName.trim()) {
+    if (settings.saveName && playerName.trim())
       localStorage.setItem("tocoPlayerName", playerName);
-    } else if (!settings.saveName) {
-      localStorage.removeItem("tocoPlayerName");
-    }
+    else if (!settings.saveName) localStorage.removeItem("tocoPlayerName");
   }, [settings, playerName]);
 
   useEffect(() => {
@@ -417,17 +414,24 @@ export default function App() {
       const savedName = localStorage.getItem("tocoPlayerName");
       if (savedName) setPlayerName(savedName);
     }
-    // Carrega o Avatar salvo localmente (se houver)
     const savedAvatar = localStorage.getItem("tocoPlayerAvatar");
     if (savedAvatar) setAvatarBase64(savedAvatar);
   }, []);
+
+  // Monitora reações recebidas do servidor
+  useEffect(() => {
+    if (roomData?.currentReaction) {
+      setActiveReaction(roomData.currentReaction.emoji);
+      const timer = setTimeout(() => setActiveReaction(null), 2500); // Fica na tela por 2.5s
+      return () => clearTimeout(timer);
+    }
+  }, [roomData?.currentReaction?.ts]);
 
   const updateSetting = (key, value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // --- Lógica de Compressão de Imagem (O Truque do Avatar Leve) ---
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -437,11 +441,10 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_SIZE = 100; // Tamanho ideal para não pesar o banco
+        const MAX_SIZE = 100;
         let width = img.width;
         let height = img.height;
 
-        // Calcula a proporção mantendo a foto quadrada/pequena
         if (width > height) {
           if (width > MAX_SIZE) {
             height *= MAX_SIZE / width;
@@ -458,7 +461,6 @@ export default function App() {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Comprime para JPEG (qualidade 0.7) - Fica muito leve!
         const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
         setAvatarBase64(compressedBase64);
         localStorage.setItem("tocoPlayerAvatar", compressedBase64);
@@ -564,7 +566,6 @@ export default function App() {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const newPin = generatePin();
     const myId = `player_${Date.now()}`;
-    // Adicionado o avatarBase64
     const newMe = {
       id: myId,
       name: playerName,
@@ -586,6 +587,7 @@ export default function App() {
       tocoTarget: null,
       lives: 3,
       trickHistory: [],
+      currentReaction: null,
     };
 
     setIsSinglePlayer(false);
@@ -616,7 +618,6 @@ export default function App() {
       if (matchedPlayer) {
         myId = matchedPlayer.id;
         newMe = matchedPlayer;
-        // Atualiza a foto se for reconexão com o mesmo nome
         if (avatarBase64)
           await update(ref(database, `rooms/${pinInput}/players/${myId}`), {
             avatar: avatarBase64,
@@ -687,10 +688,16 @@ export default function App() {
       tocoTarget: myId,
       lives: 3,
       trickHistory: [],
+      currentReaction: null,
     };
 
     setRoomData(initialRoomData);
     stateRef.current = initialRoomData;
+  };
+
+  const sendEmote = (emoji) => {
+    syncState({ currentReaction: { emoji, senderId: me.id, ts: Date.now() } });
+    setShowEmotes(false);
   };
 
   useEffect(() => {
@@ -1360,7 +1367,6 @@ export default function App() {
           </p>
 
           <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8 flex flex-col items-center">
-            {/* AREA DO AVATAR */}
             <div
               className="relative mb-6 cursor-pointer transform hover:scale-105 transition-transform"
               onClick={() => fileInputRef.current?.click()}
@@ -1434,12 +1440,22 @@ export default function App() {
     );
   }
 
+  // --- TELA DE AGUARDANDO JOGADOR ---
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-16 md:pt-24 pb-32 text-white font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
+        {/* NOVO BOTÃO DE VOLTAR */}
+        <button
+          onClick={exitGame}
+          className="absolute top-6 left-6 text-xl md:text-2xl opacity-70 hover:opacity-100 hover:-translate-x-1 transition-all duration-300 z-50 bg-black/40 rounded-full p-3 backdrop-blur-sm border border-white/10 shadow-lg"
+          title="Sair da Sala"
+        >
+          ⬅️
+        </button>
+
         <button
           onClick={() => setShowSettings(true)}
           className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50"
@@ -1516,11 +1532,34 @@ export default function App() {
   const showCards = gameState === "playing" || gameState === "round_end";
   const myTricks = trickHistory.filter((t) => t.winnerId === me?.id);
 
+  // --- TELA DA MESA DE JOGO ---
   return (
     <div
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
+      {/* ANIMAÇÃO CSS DO EMOJI */}
+      <style>{`
+        @keyframes float-emoji {
+          0% { opacity: 0; transform: translateY(50px) scale(0.5); }
+          15% { opacity: 1; transform: translateY(0px) scale(1.5); }
+          85% { opacity: 1; transform: translateY(-20px) scale(1.5); }
+          100% { opacity: 0; transform: translateY(-100px) scale(0.8); }
+        }
+        .animate-emoji {
+          animation: float-emoji 2.5s ease-out forwards;
+        }
+      `}</style>
+
+      {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
+      {activeReaction && (
+        <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
+          <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
+            {activeReaction}
+          </div>
+        </div>
+      )}
+
       <button
         onClick={() => setShowSettings(true)}
         className="absolute top-28 right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
@@ -1715,6 +1754,7 @@ export default function App() {
       </div>
 
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
+        {/* BOTÃO DA PILHA E EMOJIS */}
         {showCards && (
           <>
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
@@ -1728,8 +1768,57 @@ export default function App() {
                 </span>
               </button>
             </div>
+
+            {/* NOVO: BOTÃO DE EMOJIS / REAÇÕES */}
+            {!isSinglePlayer && (
+              <div className="absolute right-4 bottom-32 md:bottom-12 z-40 flex flex-col items-center gap-2">
+                {showEmotes && (
+                  <div className="flex flex-col gap-2 mb-2 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-xl">
+                    <button
+                      onClick={() => sendEmote("🤣")}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      🤣
+                    </button>
+                    <button
+                      onClick={() => sendEmote("😡")}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      😡
+                    </button>
+                    <button
+                      onClick={() => sendEmote("😭")}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      😭
+                    </button>
+                    <button
+                      onClick={() => sendEmote("🤡")}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      🤡
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowEmotes(!showEmotes)}
+                  className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90"
+                  title="Reagir"
+                >
+                  😀
+                </button>
+              </div>
+            )}
+
+            {/* BOTÃO DE DICA - Fica um pouco acima se os emojis estiverem ativos */}
             {turn === me?.id && settings.showHints && (
-              <div className="absolute right-4 bottom-32 md:bottom-12 z-40">
+              <div
+                className={`absolute right-4 ${
+                  !isSinglePlayer
+                    ? "bottom-48 md:bottom-28"
+                    : "bottom-32 md:bottom-12"
+                } z-40 transition-all`}
+              >
                 <button
                   onClick={generateHint}
                   className="text-yellow-400 hover:text-yellow-300 transition-all duration-200 flex flex-col items-center gap-1 active:scale-95 animate-pulse"
