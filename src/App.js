@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
 import { ref, onValue, set, update, get } from "firebase/database";
+import {
+  insertCoin,
+  myPlayer,
+  isHost,
+  useMultiplayerState,
+  usePlayersList,
+} from "playroomkit";
 
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
@@ -152,6 +159,35 @@ const POINTS_GOAL = 31;
 // ============================================================================
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
+
+// NOVO: COMPONENTE DE AVATAR LEVE
+const PlayerAvatar = ({ src, name, size = "md" }) => {
+  const dim =
+    size === "lg"
+      ? "w-24 h-24 text-3xl"
+      : size === "sm"
+      ? "w-6 h-6 text-xs"
+      : "w-10 h-10 md:w-12 md:h-12 text-lg";
+  const initial = name ? name.charAt(0).toUpperCase() : "?";
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={`${dim} rounded-full object-cover border-2 border-white/30 shadow-lg`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 border-2 border-white/30 flex items-center justify-center shadow-lg text-white font-black`}
+    >
+      {name === "Computador" ? "🤖" : initial}
+    </div>
+  );
+};
+
 const CardFace = ({
   card,
   playable,
@@ -337,12 +373,17 @@ export default function App() {
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // NOVO ESTADO: Foto de Perfil (Base64)
+  const [avatarBase64, setAvatarBase64] = useState("");
+
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
   const isOfflineRef = useRef(false);
 
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
+
+  const fileInputRef = useRef(null);
 
   // ============================================================================
   // ESTADOS DE CONFIGURAÇÃO E ÁUDIO
@@ -376,12 +417,56 @@ export default function App() {
       const savedName = localStorage.getItem("tocoPlayerName");
       if (savedName) setPlayerName(savedName);
     }
+    // Carrega o Avatar salvo localmente (se houver)
+    const savedAvatar = localStorage.getItem("tocoPlayerAvatar");
+    if (savedAvatar) setAvatarBase64(savedAvatar);
   }, []);
 
   const updateSetting = (key, value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // --- Lógica de Compressão de Imagem (O Truque do Avatar Leve) ---
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_SIZE = 100; // Tamanho ideal para não pesar o banco
+        let width = img.width;
+        let height = img.height;
+
+        // Calcula a proporção mantendo a foto quadrada/pequena
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Comprime para JPEG (qualidade 0.7) - Fica muito leve!
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+        setAvatarBase64(compressedBase64);
+        localStorage.setItem("tocoPlayerAvatar", compressedBase64);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
@@ -479,7 +564,13 @@ export default function App() {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const newPin = generatePin();
     const myId = `player_${Date.now()}`;
-    const newMe = { id: myId, name: playerName, isHost: true };
+    // Adicionado o avatarBase64
+    const newMe = {
+      id: myId,
+      name: playerName,
+      isHost: true,
+      avatar: avatarBase64,
+    };
 
     const initialRoomData = {
       gameState: "lobby",
@@ -525,11 +616,21 @@ export default function App() {
       if (matchedPlayer) {
         myId = matchedPlayer.id;
         newMe = matchedPlayer;
+        // Atualiza a foto se for reconexão com o mesmo nome
+        if (avatarBase64)
+          await update(ref(database, `rooms/${pinInput}/players/${myId}`), {
+            avatar: avatarBase64,
+          });
       } else if (existingPlayers.length >= 2) {
         return setErrorMsg("A sala já está cheia!");
       } else {
         myId = `player_${Date.now()}`;
-        newMe = { id: myId, name: playerName, isHost: false };
+        newMe = {
+          id: myId,
+          name: playerName,
+          isHost: false,
+          avatar: avatarBase64,
+        };
         await update(ref(database, `rooms/${pinInput}/players`), {
           [myId]: newMe,
         });
@@ -554,8 +655,18 @@ export default function App() {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
     const botId = `bot_1`;
-    const newMe = { id: myId, name: playerName, isHost: true };
-    const botPlayer = { id: botId, name: "Computador", isHost: false };
+    const newMe = {
+      id: myId,
+      name: playerName,
+      isHost: true,
+      avatar: avatarBase64,
+    };
+    const botPlayer = {
+      id: botId,
+      name: "Computador",
+      isHost: false,
+      avatar: "",
+    };
 
     setMe(newMe);
     setIsSinglePlayer(true);
@@ -993,11 +1104,8 @@ export default function App() {
     const pts =
       getCardPoints(p1.card, currentT) + getCardPoints(p2.card, currentT);
 
-    if (winnerId === me?.id) {
-      playSoundEffect("trick_win");
-    } else {
-      playSoundEffect("trick_lose");
-    }
+    if (winnerId === me?.id) playSoundEffect("trick_win");
+    else playSoundEffect("trick_lose");
 
     const newScores = { ...currentRS };
     newScores[winnerId] = (newScores[winnerId] || 0) + pts;
@@ -1049,9 +1157,8 @@ export default function App() {
     let resultType = "";
     let updates = {};
 
-    if (winnerId === me?.id) {
-      playSoundEffect("win");
-    } else {
+    if (winnerId === me?.id) playSoundEffect("win");
+    else {
       playSoundEffect("lose");
       if (settings.vibration && navigator.vibrate)
         navigator.vibrate([100, 50, 100]);
@@ -1063,9 +1170,8 @@ export default function App() {
     } else {
       const newLives = currentLives - 1;
       updates = { lives: newLives };
-      if (newLives > 0) {
-        resultType = "life_lost";
-      } else {
+      if (newLives > 0) resultType = "life_lost";
+      else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
         gPoints[loserId] = (gPoints[loserId] || 0) + 1;
@@ -1222,7 +1328,7 @@ export default function App() {
     </div>
   );
 
-  // --- TELA INICIAL (ATUALIZADA PARA NÃO BUGAR O TECLADO) ---
+  // --- TELA INICIAL ---
   if (!roomId) {
     return (
       <div
@@ -1253,7 +1359,25 @@ export default function App() {
             Desenvolvido por Ryan Kilberth
           </p>
 
-          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8">
+          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8 flex flex-col items-center">
+            {/* AREA DO AVATAR */}
+            <div
+              className="relative mb-6 cursor-pointer transform hover:scale-105 transition-transform"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <PlayerAvatar src={avatarBase64} name={playerName} size="lg" />
+              <div className="absolute bottom-0 right-0 bg-blue-600 rounded-full p-2 border-2 border-black shadow-lg">
+                📸
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleImageUpload}
+              />
+            </div>
+
             <input
               type="text"
               placeholder="Seu Nome ou Apelido"
@@ -1361,6 +1485,7 @@ export default function App() {
                 key={p.id}
                 className="bg-gradient-to-b from-blue-500 to-blue-700 px-4 py-2 rounded-xl font-bold shadow-lg border-b-4 border-blue-900 notranslate flex items-center gap-2"
               >
+                <PlayerAvatar src={p.avatar} name={p.name} size="sm" />
                 {p.isHost && <span title="Host">👑</span>}
                 {p.name}
               </div>
@@ -1405,17 +1530,24 @@ export default function App() {
       {showSettings && <SettingsModal />}
 
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
+        {/* JOGADOR 1 (ESQUERDA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
             turn === playersList[0]?.id ? "bg-white/5" : ""
           }`}
         >
           <div className="flex justify-between items-center w-full gap-2">
-            <span className="font-bold text-base md:text-xl drop-shadow truncate">
-              {playersList[0]?.id === "bot_1"
-                ? "🤖 Computador"
-                : playersList[0]?.name}
-            </span>
+            <div className="flex items-center gap-2">
+              <PlayerAvatar
+                src={playersList[0]?.avatar}
+                name={playersList[0]?.name}
+              />
+              <span className="font-bold text-base md:text-xl drop-shadow truncate">
+                {playersList[0]?.id === "bot_1"
+                  ? "Computador"
+                  : playersList[0]?.name}
+              </span>
+            </div>
             {tocoTarget === playersList[0]?.id && (
               <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
                 {[...Array(lives)].map((_, i) => (
@@ -1424,7 +1556,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="flex items-end justify-between mt-1">
+          <div className="flex items-end justify-between mt-1 pl-12">
             <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
               {roundScores[playersList[0]?.id] || 0}
               <span className="text-xs md:text-sm text-gray-400 font-sans">
@@ -1454,17 +1586,24 @@ export default function App() {
           )}
         </div>
 
+        {/* JOGADOR 2 (DIREITA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
             turn === playersList[1]?.id ? "bg-white/5" : ""
           }`}
         >
           <div className="flex justify-between items-center flex-row-reverse w-full gap-2">
-            <span className="font-bold text-base md:text-xl drop-shadow truncate text-right">
-              {playersList[1]?.id === "bot_1"
-                ? "🤖 Computador"
-                : playersList[1]?.name}
-            </span>
+            <div className="flex items-center flex-row-reverse gap-2">
+              <PlayerAvatar
+                src={playersList[1]?.avatar}
+                name={playersList[1]?.name}
+              />
+              <span className="font-bold text-base md:text-xl drop-shadow truncate text-right">
+                {playersList[1]?.id === "bot_1"
+                  ? "Computador"
+                  : playersList[1]?.name}
+              </span>
+            </div>
             {tocoTarget === playersList[1]?.id && (
               <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
                 {[...Array(lives)].map((_, i) => (
@@ -1473,7 +1612,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="flex items-end justify-between mt-1 flex-row-reverse">
+          <div className="flex items-end justify-between mt-1 pr-12 flex-row-reverse">
             <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
               {roundScores[playersList[1]?.id] || 0}
               <span className="text-xs md:text-sm text-gray-400 font-sans">
