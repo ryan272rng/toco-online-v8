@@ -363,7 +363,7 @@ const CardBack = ({ settings }) => {
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS GERAIS
+  // 2. ESTADOS GERAIS E CONFIGURAÇÕES
   // ============================================================================
   const [playerName, setPlayerName] = useState("");
   const [pinInput, setPinInput] = useState("");
@@ -373,7 +373,6 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [avatarBase64, setAvatarBase64] = useState("");
-
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
   const isOfflineRef = useRef(false);
 
@@ -381,13 +380,13 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
 
-  // NOVOS ESTADOS PARA REAÇÕES (EMOJIS)
   const [showEmotes, setShowEmotes] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
 
   const fileInputRef = useRef(null);
-
   const [showSettings, setShowSettings] = useState(false);
+
+  // ATUALIZAÇÃO NAS CONFIGURAÇÕES: Adicionado o estado 'animations'
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
     return saved
@@ -399,6 +398,7 @@ export default function App() {
           saveName: false,
           deckStyle: "luxo",
           cardSize: "normal",
+          animations: true,
         };
   });
 
@@ -418,11 +418,10 @@ export default function App() {
     if (savedAvatar) setAvatarBase64(savedAvatar);
   }, []);
 
-  // Monitora reações recebidas do servidor
   useEffect(() => {
     if (roomData?.currentReaction) {
       setActiveReaction(roomData.currentReaction.emoji);
-      const timer = setTimeout(() => setActiveReaction(null), 2500); // Fica na tela por 2.5s
+      const timer = setTimeout(() => setActiveReaction(null), 2500);
       return () => clearTimeout(timer);
     }
   }, [roomData?.currentReaction?.ts]);
@@ -588,6 +587,7 @@ export default function App() {
       lives: 3,
       trickHistory: [],
       currentReaction: null,
+      sweepingTo: null,
     };
 
     setIsSinglePlayer(false);
@@ -689,6 +689,7 @@ export default function App() {
       lives: 3,
       trickHistory: [],
       currentReaction: null,
+      sweepingTo: null,
     };
 
     setRoomData(initialRoomData);
@@ -1016,6 +1017,7 @@ export default function App() {
       trickHistory: [],
       hands: {},
       gameState: "choose_trump",
+      sweepingTo: null,
     });
     setLocalProcessing(false);
   };
@@ -1089,6 +1091,7 @@ export default function App() {
     if (me?.id && turn === me.id) setLocalProcessing(false);
   }, [tableCards.length, turn, me?.id]);
 
+  // ATUALIZAÇÃO: Lógica para disparar e aguardar a animação de Sweep (Recolher as cartas)
   const resolveRound = (cards) => {
     const currentRS = stateRef.current?.roundScores || {};
     const currentT = stateRef.current?.trumpSuit;
@@ -1125,15 +1128,19 @@ export default function App() {
       cards: [p1.card, p2.card],
     };
 
+    // ATIVAR A ANIMAÇÃO DE SWEEP (Envia o winnerId para a mesa saber para qual lado voar)
     syncState({
       roundScores: newScores,
       trickFeedback: { winnerName, pts },
       trickHistory: [...currentHistory, trickData],
-      tableCards: [],
+      sweepingTo: winnerId,
     });
 
     if (newScores[winnerId] >= POINTS_GOAL) {
-      handleGameEnd(winnerId);
+      setTimeout(() => {
+        syncState({ tableCards: [], sweepingTo: null });
+        handleGameEnd(winnerId);
+      }, 800); // Aguarda 800ms para a animação terminar antes de encerrar o jogo
     } else {
       setTimeout(() => {
         const freshDeck = [...(stateRef.current?.deck || [])];
@@ -1148,9 +1155,17 @@ export default function App() {
           if (freshHands[loserId])
             freshHands[loserId] = [...(freshHands[loserId] || []), c2];
         }
-        syncState({ hands: freshHands, deck: freshDeck, turn: winnerId });
-      }, 300);
-      setTimeout(() => syncState({ trickFeedback: null }), 2500);
+        // Limpa a mesa de verdade e distribui cartas novas
+        syncState({
+          hands: freshHands,
+          deck: freshDeck,
+          turn: winnerId,
+          tableCards: [],
+          sweepingTo: null,
+        });
+      }, 800); // 800ms para a animação de Sweep
+
+      setTimeout(() => syncState({ trickFeedback: null }), 2500); // Balão de Vitória some depois
     }
   };
 
@@ -1299,7 +1314,19 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
-          <div className="text-white font-medium border-t border-white/10 pt-3">
+
+          {/* NOVO: BOTÃO DE ANIMAÇÕES */}
+          <label className="flex justify-between items-center text-white font-medium border-t border-white/10 pt-4">
+            <span>✨ Animações de Mesa</span>
+            <input
+              type="checkbox"
+              checked={settings.animations ?? true}
+              onChange={() => toggleSetting("animations")}
+              className="w-6 h-6 accent-yellow-500"
+            />
+          </label>
+
+          <div className="text-white font-medium pt-3">
             <span className="mb-2 block">📱 Tamanho das Cartas</span>
             <select
               value={settings.cardSize}
@@ -1447,7 +1474,6 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-16 md:pt-24 pb-32 text-white font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
-        {/* NOVO BOTÃO DE VOLTAR */}
         <button
           onClick={exitGame}
           className="absolute top-6 left-6 text-xl md:text-2xl opacity-70 hover:opacity-100 hover:-translate-x-1 transition-all duration-300 z-50 bg-black/40 rounded-full p-3 backdrop-blur-sm border border-white/10 shadow-lg"
@@ -1538,7 +1564,10 @@ export default function App() {
       className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
       translate="no"
     >
-      {/* ANIMAÇÃO CSS DO EMOJI */}
+      {/* 
+        NOVO BLOCO DE ESTILOS CSS 
+        Aqui ficam as animações físicas de cartas entrando e voando na tela.
+      */}
       <style>{`
         @keyframes float-emoji {
           0% { opacity: 0; transform: translateY(50px) scale(0.5); }
@@ -1546,9 +1575,31 @@ export default function App() {
           85% { opacity: 1; transform: translateY(-20px) scale(1.5); }
           100% { opacity: 0; transform: translateY(-100px) scale(0.8); }
         }
-        .animate-emoji {
-          animation: float-emoji 2.5s ease-out forwards;
+        .animate-emoji { animation: float-emoji 2.5s ease-out forwards; }
+
+        @keyframes deal-up {
+          0% { transform: translateY(150px) scale(0.5); opacity: 0; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
         }
+        .animate-deal-up { animation: deal-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        @keyframes deal-table {
+          0% { transform: translateY(-50px) scale(0.5); opacity: 0; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        .animate-deal-table { animation: deal-table 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        @keyframes sweep-left {
+          0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+          100% { transform: translate(-30vw, -30vh) scale(0) rotate(-90deg); opacity: 0; }
+        }
+        .animate-sweep-left { animation: sweep-left 0.7s ease-in forwards; }
+
+        @keyframes sweep-right {
+          0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+          100% { transform: translate(30vw, -30vh) scale(0) rotate(90deg); opacity: 0; }
+        }
+        .animate-sweep-right { animation: sweep-right 0.7s ease-in forwards; }
       `}</style>
 
       {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
@@ -1714,27 +1765,49 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* ÁREA DA MESA COM ANIMAÇÕES DE SWEEP (VOAR PARA O GANHADOR) */}
         <div className="relative flex flex-col items-center justify-center w-full translate-y-6 md:translate-y-12">
           <div className="flex gap-6 md:gap-12 items-center h-40 md:h-48 z-10">
-            {tableCards.map((tc, i) => (
-              <div
-                key={tc.card.id}
-                className="flex flex-col items-center animate-bounce"
-              >
-                <CardFace
-                  card={tc.card}
-                  playable={false}
-                  settings={settings}
-                  trumpSuit={trumpSuit}
-                />
-                <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                  {playersList.find((p) => p.id === tc.playerId)?.id === "bot_1"
-                    ? "Computador"
-                    : playersList.find((p) => p.id === tc.playerId)?.name}
-                </span>
-              </div>
-            ))}
+            {tableCards.map((tc, i) => {
+              const sweepingTo = roomData?.sweepingTo;
+              const isLeft = sweepingTo === playersList[0]?.id;
+              const isAnimEnabled = settings.animations ?? true;
+
+              // Se a carta está sendo varrida, ela voa para a esquerda ou direita
+              // Se não está, e a animação está ligada, ela dá um pulinho na entrada (deal-table)
+              const animationClass = sweepingTo
+                ? isAnimEnabled
+                  ? isLeft
+                    ? "animate-sweep-left"
+                    : "animate-sweep-right"
+                  : "opacity-0"
+                : isAnimEnabled
+                ? "animate-deal-table"
+                : "";
+
+              return (
+                <div
+                  key={tc.card.id}
+                  className={`flex flex-col items-center ${animationClass}`}
+                >
+                  <CardFace
+                    card={tc.card}
+                    playable={false}
+                    settings={settings}
+                    trumpSuit={trumpSuit}
+                  />
+                  <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
+                    {playersList.find((p) => p.id === tc.playerId)?.id ===
+                    "bot_1"
+                      ? "Computador"
+                      : playersList.find((p) => p.id === tc.playerId)?.name}
+                  </span>
+                </div>
+              );
+            })}
           </div>
+
           {trickFeedback && (
             <div className="absolute z-30 bg-white/95 backdrop-blur px-8 py-4 rounded-2xl border-4 border-yellow-500 shadow-[0_0_50px_rgba(234,179,8,0.6)] animate-fade-in text-center transform scale-110">
               <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">
@@ -1754,7 +1827,6 @@ export default function App() {
       </div>
 
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
-        {/* BOTÃO DA PILHA E EMOJIS */}
         {showCards && (
           <>
             <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
@@ -1769,7 +1841,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* NOVO: BOTÃO DE EMOJIS / REAÇÕES */}
             {!isSinglePlayer && (
               <div className="absolute right-4 bottom-32 md:bottom-12 z-40 flex flex-col items-center gap-2">
                 {showEmotes && (
@@ -1810,7 +1881,6 @@ export default function App() {
               </div>
             )}
 
-            {/* BOTÃO DE DICA - Fica um pouco acima se os emojis estiverem ativos */}
             {turn === me?.id && settings.showHints && (
               <div
                 className={`absolute right-4 ${
@@ -1850,11 +1920,18 @@ export default function App() {
         </div>
 
         <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2 overflow-visible">
+          {/* ANIMAÇÃO DE DISTRIBUIÇÃO NA MÃO */}
           {showCards &&
-            myHand.map((card) => (
+            myHand.map((card, index) => (
               <div
                 key={card.id}
-                className="transition-transform duration-200 hover:-translate-y-6 hover:z-20 overflow-visible"
+                className={`transition-transform duration-200 hover:-translate-y-6 hover:z-20 overflow-visible ${
+                  settings.animations ?? true ? "animate-deal-up" : ""
+                }`}
+                style={{
+                  animationDelay: `${index * 0.1}s`,
+                  animationFillMode: "backwards",
+                }}
               >
                 <CardFace
                   card={card}
