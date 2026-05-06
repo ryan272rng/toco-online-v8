@@ -156,6 +156,28 @@ const RANKS = [
 
 const POINTS_GOAL = 31;
 
+// ESTILOS DA MESA E CHAT
+const TABLE_STYLES = {
+  tradicional: "from-green-800 via-green-900 to-black",
+  taverna: "from-amber-800 via-amber-900 to-orange-950",
+  vegas: "from-red-800 via-red-900 to-black",
+  noturno: "from-gray-900 via-gray-950 to-black",
+};
+
+const getTableBg = (style) =>
+  `bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] ${
+    TABLE_STYLES[style] || TABLE_STYLES.tradicional
+  }`;
+
+const CHAT_PHRASES = [
+  "Demorou, hein! ⏳",
+  "Tá com medo? 🐔",
+  "Sorte de principiante! 🍀",
+  "Toma essa! 💥",
+  "Boa jogada! 👏",
+  "Lascou... 😭",
+];
+
 // ============================================================================
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
@@ -383,13 +405,16 @@ export default function App() {
   const [currentHint, setCurrentHint] = useState(null);
 
   const [showEmotes, setShowEmotes] = useState(false);
+  const [showChat, setShowChat] = useState(false); // NOVO ESTADO: Botão do Chat
   const [activeReaction, setActiveReaction] = useState(null);
+  const [activeChatMessage, setActiveChatMessage] = useState(null); // NOVO ESTADO: Balão de Chat Ativo
   const [isShaking, setIsShaking] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showRules, setShowRules] = useState(false);
 
+  // ATUALIZADO O DEFAULT: Baralho default (branco) e mesa tradicional
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
     return saved
@@ -399,9 +424,10 @@ export default function App() {
           vibration: true,
           showHints: true,
           saveName: false,
-          deckStyle: "luxo",
+          deckStyle: "default",
           cardSize: "normal",
           animations: true,
+          tableStyle: "tradicional",
         };
   });
 
@@ -439,6 +465,15 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [roomData?.currentReaction?.ts]);
+
+  // NOVO EFFECT: Monitorar mensagens do Chat
+  useEffect(() => {
+    if (roomData?.currentMessage) {
+      setActiveChatMessage(roomData.currentMessage);
+      const timer = setTimeout(() => setActiveChatMessage(null), 3500); // 3.5 segundos para ler
+      return () => clearTimeout(timer);
+    }
+  }, [roomData?.currentMessage?.ts]);
 
   const updateSetting = (key, value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -624,6 +659,7 @@ export default function App() {
       trickHistory: [],
       currentReaction: null,
       sweepingTo: null,
+      currentMessage: null,
     };
 
     setIsSinglePlayer(false);
@@ -728,6 +764,7 @@ export default function App() {
       trickHistory: [],
       currentReaction: null,
       sweepingTo: null,
+      currentMessage: null,
     };
 
     setRoomData(initialRoomData);
@@ -738,6 +775,13 @@ export default function App() {
     if (isNetworkOffline) return;
     syncState({ currentReaction: { emoji, senderId: me.id, ts: Date.now() } });
     setShowEmotes(false);
+  };
+
+  // NOVA FUNÇÃO: Enviar Chat de Texto
+  const sendChatMessage = (text) => {
+    if (isNetworkOffline) return;
+    syncState({ currentMessage: { text, senderId: me.id, ts: Date.now() } });
+    setShowChat(false);
   };
 
   useEffect(() => {
@@ -1524,7 +1568,22 @@ export default function App() {
             />
           </label>
 
-          <div className="text-white font-medium pt-3">
+          {/* NOVO: OPÇÃO DE MESA */}
+          <div className="text-white font-medium pt-3 border-t border-white/10 mt-2">
+            <span className="mb-2 block">🎨 Estilo da Mesa</span>
+            <select
+              value={settings.tableStyle || "tradicional"}
+              onChange={(e) => updateSetting("tableStyle", e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
+            >
+              <option value="tradicional">Cassino (Verde)</option>
+              <option value="taverna">Taverna (Âmbar/Madeira)</option>
+              <option value="vegas">Vegas VIP (Vermelho)</option>
+              <option value="noturno">Modo Noturno (Preto)</option>
+            </select>
+          </div>
+
+          <div className="text-white font-medium pt-1">
             <span className="mb-2 block">📱 Tamanho das Cartas</span>
             <select
               value={settings.cardSize}
@@ -1564,10 +1623,11 @@ export default function App() {
   if (!roomId) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-12 md:pt-24 pb-32 font-sans p-4 relative overflow-y-auto w-full"
+        className={`min-h-screen ${getTableBg(
+          settings.tableStyle
+        )} flex flex-col items-center justify-start pt-12 md:pt-24 pb-32 font-sans p-4 relative overflow-y-auto w-full`}
         translate="no"
       >
-        {/* BOTÕES ALINHADOS EM COLUNA NO TOPO DIREITO */}
         <div className="absolute top-6 right-4 md:right-6 flex flex-col items-center gap-3 z-50">
           <button
             onClick={() => setShowSettings(true)}
@@ -1699,7 +1759,9 @@ export default function App() {
   if (gameState === "lobby" && !isSinglePlayer) {
     return (
       <div
-        className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-16 md:pt-24 pb-32 text-white font-sans p-4 relative overflow-y-auto w-full"
+        className={`min-h-screen ${getTableBg(
+          settings.tableStyle
+        )} flex flex-col items-center justify-start pt-16 md:pt-24 pb-32 text-white font-sans p-4 relative overflow-y-auto w-full`}
         translate="no"
       >
         <button
@@ -1710,7 +1772,6 @@ export default function App() {
           ⬅️
         </button>
 
-        {/* BOTÕES ALINHADOS EM COLUNA NO TOPO DIREITO */}
         <div className="absolute top-6 right-4 md:right-6 flex flex-col items-center gap-3 z-50">
           <button
             onClick={() => setShowSettings(true)}
@@ -1802,7 +1863,9 @@ export default function App() {
   // --- TELA DA MESA DE JOGO ---
   return (
     <div
-      className={`min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative ${
+      className={`min-h-screen ${getTableBg(
+        settings.tableStyle
+      )} flex flex-col font-sans overflow-hidden notranslate text-white relative ${
         isShaking ? "animate-shake" : ""
       }`}
       translate="no"
@@ -1815,6 +1878,14 @@ export default function App() {
           100% { opacity: 0; transform: translateY(-100px) scale(0.8); }
         }
         .animate-emoji { animation: float-emoji 2.5s ease-out forwards; }
+
+        @keyframes chat-bubble {
+          0% { opacity: 0; transform: scale(0.8) translateY(-10px); }
+          10% { opacity: 1; transform: scale(1) translateY(0); }
+          90% { opacity: 1; transform: scale(1) translateY(0); }
+          100% { opacity: 0; transform: scale(0.8) translateY(10px); }
+        }
+        .animate-chat { animation: chat-bubble 3.5s ease-in-out forwards; }
 
         @keyframes deal-up {
           0% { transform: translateY(150px) scale(0.5); opacity: 0; }
@@ -1861,6 +1932,7 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
+      {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
       {activeReaction && (
         <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
           <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
@@ -1869,7 +1941,23 @@ export default function App() {
         </div>
       )}
 
-      {/* BOTÃO DE CONFIGURAÇÕES E REGRAS NA MESA (EM COLUNA) */}
+      {/* RENDERIZADOR DO BALÃO DE CHAT (Jogador Esquerda) */}
+      {activeChatMessage &&
+        activeChatMessage.senderId === playersList[0]?.id && (
+          <div className="pointer-events-none absolute top-[90px] left-4 z-[140] bg-white text-blue-900 font-black text-sm px-5 py-2 rounded-2xl rounded-tl-none shadow-xl border-2 border-gray-200 animate-chat max-w-[200px]">
+            {activeChatMessage.text}
+          </div>
+        )}
+
+      {/* RENDERIZADOR DO BALÃO DE CHAT (Jogador Direita) */}
+      {activeChatMessage &&
+        activeChatMessage.senderId === playersList[1]?.id && (
+          <div className="pointer-events-none absolute top-[90px] right-4 z-[140] bg-white text-blue-900 font-black text-sm px-5 py-2 rounded-2xl rounded-tr-none shadow-xl border-2 border-gray-200 animate-chat max-w-[200px] text-right">
+            {activeChatMessage.text}
+          </div>
+        )}
+
+      {/* BOTÃO DE CONFIGURAÇÕES NA MESA */}
       <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
         <button
           onClick={() => setShowSettings(true)}
@@ -1891,6 +1979,7 @@ export default function App() {
       {showRules && <RulesModal />}
 
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
+        {/* JOGADOR 1 (ESQUERDA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
             turn === playersList[0]?.id ? "bg-white/5" : ""
@@ -1946,6 +2035,7 @@ export default function App() {
           )}
         </div>
 
+        {/* JOGADOR 2 (DIREITA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
             turn === playersList[1]?.id ? "bg-white/5" : ""
@@ -1988,7 +2078,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* BOLHA DE DICAS FOI MOVIDA MAIS PARA BAIXO */}
       {currentHint && (
         <div className="absolute bottom-64 md:bottom-56 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -2099,7 +2188,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA MOVIDO PARA CIMA */}
             <div className="absolute left-4 bottom-48 md:bottom-20 z-40">
               <button
                 onClick={() => setShowHistory(true)}
@@ -2112,10 +2200,11 @@ export default function App() {
               </button>
             </div>
 
+            {/* BOTÕES DE CHAT E EMOJIS */}
             {!isSinglePlayer && (
-              <div className="absolute right-4 bottom-48 md:bottom-20 z-40 flex flex-col items-center gap-2">
+              <div className="absolute right-4 bottom-48 md:bottom-20 z-40 flex flex-col items-end gap-2">
                 {showEmotes && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-xl">
+                  <div className="flex flex-col gap-2 mb-2 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-xl items-center">
                     <button
                       onClick={() => sendEmote("🤣")}
                       className="text-2xl hover:scale-125 transition-transform"
@@ -2142,17 +2231,45 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                <button
-                  onClick={() => setShowEmotes(!showEmotes)}
-                  className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90"
-                  title="Reagir"
-                >
-                  😀
-                </button>
+                {showChat && (
+                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm">
+                    {CHAT_PHRASES.map((phrase) => (
+                      <button
+                        key={phrase}
+                        onClick={() => sendChatMessage(phrase)}
+                        className="text-white hover:text-yellow-400 text-right whitespace-nowrap font-medium py-1 transition-colors"
+                      >
+                        {phrase}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowChat(!showChat);
+                      setShowEmotes(false);
+                    }}
+                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    title="Chat Rápido"
+                  >
+                    💬
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEmotes(!showEmotes);
+                      setShowChat(false);
+                    }}
+                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    title="Reagir"
+                  >
+                    😀
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* BOTÃO DA DICA MOVIDO PARA CIMA */}
             {turn === me?.id && settings.showHints && (
               <div
                 className={`absolute right-4 ${
