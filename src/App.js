@@ -382,11 +382,11 @@ export default function App() {
 
   const [showEmotes, setShowEmotes] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
+  const [isShaking, setIsShaking] = useState(false); // NOVO ESTADO: Tremer tela
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  // ATUALIZAÇÃO NAS CONFIGURAÇÕES: Adicionado o estado 'animations'
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
     return saved
@@ -488,6 +488,17 @@ export default function App() {
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
+      } else if (type === "heavy_card") {
+        // NOVO SOM GRAVE PARA CARTAS PESADAS
+        osc.type = "square";
+        osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+        if (settings.vibration && navigator.vibrate)
+          navigator.vibrate([50, 50, 50]);
       } else if (type === "win") {
         osc.type = "triangle";
         osc.frequency.setValueAtTime(440, ctx.currentTime);
@@ -783,6 +794,23 @@ export default function App() {
     return 0;
   };
 
+  // NOVA FUNÇÃO: Verifica se a carta jogada é "Épica" (Ás/7 no encarte ou 3/2 no corte)
+  const checkIfHeavy = (playedCard, currentTable, trump) => {
+    if (currentTable.length === 0) {
+      return (
+        ["A", "7"].includes(playedCard.label) ||
+        (playedCard.suit === trump && ["3", "2"].includes(playedCard.label))
+      );
+    }
+    const leadSuit = currentTable[0].card.suit;
+    const isEncarte = playedCard.suit === leadSuit;
+    const isCorte = playedCard.suit === trump && playedCard.suit !== leadSuit;
+
+    if (isEncarte && ["A", "7"].includes(playedCard.label)) return true;
+    if (isCorte && ["3", "2"].includes(playedCard.label)) return true; // Corte só com Manilhas de 10 pts
+    return false;
+  };
+
   const getBestCardToPlay = (
     playerId,
     currentHand,
@@ -955,11 +983,15 @@ export default function App() {
         );
 
         if (cardToPlay) {
-          playSoundEffect("card");
+          const isHeavy = checkIfHeavy(
+            cardToPlay,
+            stateRef.current.tableCards,
+            stateRef.current.trumpSuit
+          );
           const newHand = botHand.filter((c) => c.id !== cardToPlay.id);
           const newTable = [
             ...stateRef.current.tableCards,
-            { playerId: botId, card: cardToPlay },
+            { playerId: botId, card: cardToPlay, isHeavy },
           ];
           let nextTurn = turn;
           if (newTable.length < playersList.length) nextTurn = me.id;
@@ -1049,8 +1081,12 @@ export default function App() {
       return;
     if (tableCards.some((tc) => tc.playerId === me.id)) return;
 
-    if (settings.vibration && navigator.vibrate) navigator.vibrate(40);
-    playSoundEffect("card");
+    if (
+      settings.vibration &&
+      navigator.vibrate &&
+      !checkIfHeavy(card, tableCards, trumpSuit)
+    )
+      navigator.vibrate(40); // Só vibra leve se não for pesada (pesada vibra forte no Audio)
 
     setLocalProcessing(true);
     setCurrentHint(null);
@@ -1058,7 +1094,10 @@ export default function App() {
     const currentHands = stateRef.current?.hands || {};
     const myHand = currentHands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
-    const newTable = [...tableCards, { playerId: me.id, card }];
+
+    // ANÁLISE DE PESO: Avalia se a carta jogada foi épica e carimba nela
+    const isHeavy = checkIfHeavy(card, tableCards, trumpSuit);
+    const newTable = [...tableCards, { playerId: me.id, card, isHeavy }];
 
     let nextTurn = turn;
     if (newTable.length < playersList.length) {
@@ -1072,6 +1111,22 @@ export default function App() {
       turn: nextTurn,
     });
   };
+
+  // EFEITO VISUAL E SONORO DA MESA: Dispara apenas quando uma carta nova chega na mesa
+  const prevTableLength = useRef(0);
+  useEffect(() => {
+    if (tableCards.length > prevTableLength.current) {
+      const lastCard = tableCards[tableCards.length - 1];
+      if (lastCard.isHeavy && settings.animations) {
+        playSoundEffect("heavy_card");
+        setIsShaking(true);
+        setTimeout(() => setIsShaking(false), 400); // Para de tremer após 400ms
+      } else {
+        playSoundEffect("card");
+      }
+    }
+    prevTableLength.current = tableCards.length;
+  }, [tableCards, settings.animations]);
 
   useEffect(() => {
     if (
@@ -1091,7 +1146,6 @@ export default function App() {
     if (me?.id && turn === me.id) setLocalProcessing(false);
   }, [tableCards.length, turn, me?.id]);
 
-  // ATUALIZAÇÃO: Lógica para disparar e aguardar a animação de Sweep (Recolher as cartas)
   const resolveRound = (cards) => {
     const currentRS = stateRef.current?.roundScores || {};
     const currentT = stateRef.current?.trumpSuit;
@@ -1128,7 +1182,6 @@ export default function App() {
       cards: [p1.card, p2.card],
     };
 
-    // ATIVAR A ANIMAÇÃO DE SWEEP (Envia o winnerId para a mesa saber para qual lado voar)
     syncState({
       roundScores: newScores,
       trickFeedback: { winnerName, pts },
@@ -1140,7 +1193,7 @@ export default function App() {
       setTimeout(() => {
         syncState({ tableCards: [], sweepingTo: null });
         handleGameEnd(winnerId);
-      }, 800); // Aguarda 800ms para a animação terminar antes de encerrar o jogo
+      }, 800);
     } else {
       setTimeout(() => {
         const freshDeck = [...(stateRef.current?.deck || [])];
@@ -1155,7 +1208,6 @@ export default function App() {
           if (freshHands[loserId])
             freshHands[loserId] = [...(freshHands[loserId] || []), c2];
         }
-        // Limpa a mesa de verdade e distribui cartas novas
         syncState({
           hands: freshHands,
           deck: freshDeck,
@@ -1163,9 +1215,9 @@ export default function App() {
           tableCards: [],
           sweepingTo: null,
         });
-      }, 800); // 800ms para a animação de Sweep
+      }, 800);
 
-      setTimeout(() => syncState({ trickFeedback: null }), 2500); // Balão de Vitória some depois
+      setTimeout(() => syncState({ trickFeedback: null }), 2500);
     }
   };
 
@@ -1315,7 +1367,6 @@ export default function App() {
             />
           </label>
 
-          {/* NOVO: BOTÃO DE ANIMAÇÕES */}
           <label className="flex justify-between items-center text-white font-medium border-t border-white/10 pt-4">
             <span>✨ Animações de Mesa</span>
             <input
@@ -1481,7 +1532,6 @@ export default function App() {
         >
           ⬅️
         </button>
-
         <button
           onClick={() => setShowSettings(true)}
           className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50"
@@ -1561,13 +1611,12 @@ export default function App() {
   // --- TELA DA MESA DE JOGO ---
   return (
     <div
-      className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative"
+      className={`min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col font-sans overflow-hidden notranslate text-white relative ${
+        isShaking ? "animate-shake" : ""
+      }`}
       translate="no"
     >
-      {/* 
-        NOVO BLOCO DE ESTILOS CSS 
-        Aqui ficam as animações físicas de cartas entrando e voando na tela.
-      */}
+      {/* BLOCO DE ESTILOS CSS - FÍSICA E IMPACTO */}
       <style>{`
         @keyframes float-emoji {
           0% { opacity: 0; transform: translateY(50px) scale(0.5); }
@@ -1600,6 +1649,27 @@ export default function App() {
           100% { transform: translate(30vw, -30vh) scale(0) rotate(90deg); opacity: 0; }
         }
         .animate-sweep-right { animation: sweep-right 0.7s ease-in forwards; }
+
+        /* NOVAS ANIMAÇÕES: IMPACTO VISUAL (TERREMOTO E CARTA PESADA) */
+        @keyframes screen-shake {
+          0%, 100% { transform: translate(0, 0) rotate(0deg); }
+          10% { transform: translate(-2px, -3px) rotate(-1deg); }
+          20% { transform: translate(3px, 2px) rotate(1deg); }
+          30% { transform: translate(-3px, 0px) rotate(0deg); }
+          40% { transform: translate(2px, -2px) rotate(1deg); }
+          50% { transform: translate(-1px, 3px) rotate(-1deg); }
+          60% { transform: translate(-3px, 1px) rotate(0deg); }
+          70% { transform: translate(3px, 1px) rotate(-1deg); }
+          80% { transform: translate(-1px, -1px) rotate(1deg); }
+          90% { transform: translate(1px, 2px) rotate(0deg); }
+        }
+        .animate-shake { animation: screen-shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+        @keyframes heavy-card-drop {
+           0% { transform: scale(2.5); opacity: 0; filter: drop-shadow(0 0 50px rgba(250,204,21,1)); }
+           100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 20px rgba(250,204,21,0.6)); }
+        }
+        .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
       {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
@@ -1766,25 +1836,27 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM ANIMAÇÕES DE SWEEP (VOAR PARA O GANHADOR) */}
+        {/* ÁREA DA MESA COM FÍSICA E IMPACTO DE CARTA */}
         <div className="relative flex flex-col items-center justify-center w-full translate-y-6 md:translate-y-12">
           <div className="flex gap-6 md:gap-12 items-center h-40 md:h-48 z-10">
-            {tableCards.map((tc, i) => {
+            {tableCards.map((tc) => {
               const sweepingTo = roomData?.sweepingTo;
               const isLeft = sweepingTo === playersList[0]?.id;
               const isAnimEnabled = settings.animations ?? true;
 
-              // Se a carta está sendo varrida, ela voa para a esquerda ou direita
-              // Se não está, e a animação está ligada, ela dá um pulinho na entrada (deal-table)
-              const animationClass = sweepingTo
-                ? isAnimEnabled
+              let animationClass = "";
+              if (sweepingTo) {
+                animationClass = isAnimEnabled
                   ? isLeft
                     ? "animate-sweep-left"
                     : "animate-sweep-right"
-                  : "opacity-0"
-                : isAnimEnabled
-                ? "animate-deal-table"
-                : "";
+                  : "opacity-0";
+              } else if (isAnimEnabled) {
+                // SE FOR UMA CARTA PESADA (A/7 NO ENCARTE ou 3/2 NO CORTE), USA ANIMAÇÃO DE IMPACTO
+                animationClass = tc.isHeavy
+                  ? "animate-heavy-drop"
+                  : "animate-deal-table";
+              }
 
               return (
                 <div
@@ -1920,7 +1992,6 @@ export default function App() {
         </div>
 
         <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2 overflow-visible">
-          {/* ANIMAÇÃO DE DISTRIBUIÇÃO NA MÃO */}
           {showCards &&
             myHand.map((card, index) => (
               <div
