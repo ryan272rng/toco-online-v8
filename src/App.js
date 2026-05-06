@@ -376,6 +376,8 @@ export default function App() {
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
   const isOfflineRef = useRef(false);
 
+  const [isNetworkOffline, setIsNetworkOffline] = useState(!navigator.onLine);
+
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
@@ -386,7 +388,7 @@ export default function App() {
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showRules, setShowRules] = useState(false); // NOVO ESTADO: Mostrar Cartilha
+  const [showRules, setShowRules] = useState(false);
 
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
@@ -402,6 +404,17 @@ export default function App() {
           animations: true,
         };
   });
+
+  useEffect(() => {
+    const handleOnline = () => setIsNetworkOffline(false);
+    const handleOffline = () => setIsNetworkOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("tocoSettings", JSON.stringify(settings));
@@ -431,6 +444,15 @@ export default function App() {
     setSettings((prev) => ({ ...prev, [key]: value }));
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const forceUpdateGame = () => {
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      });
+    }
+    window.location.reload(true);
+  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -559,7 +581,7 @@ export default function App() {
         return newData;
       });
     } else {
-      if (!roomId) return;
+      if (!roomId || isNetworkOffline) return;
       update(ref(database, `rooms/${roomId}`), updates);
     }
   };
@@ -574,6 +596,8 @@ export default function App() {
   };
 
   const createRoom = async () => {
+    if (isNetworkOffline)
+      return setErrorMsg("Conecte-se à internet para jogar online.");
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const newPin = generatePin();
     const myId = `player_${Date.now()}`;
@@ -610,6 +634,8 @@ export default function App() {
   };
 
   const joinRoom = async () => {
+    if (isNetworkOffline)
+      return setErrorMsg("Conecte-se à internet para jogar online.");
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     if (!pinInput.trim() || pinInput.length !== 4)
       return setErrorMsg("Digite um PIN válido de 4 números!");
@@ -709,12 +735,13 @@ export default function App() {
   };
 
   const sendEmote = (emoji) => {
+    if (isNetworkOffline) return;
     syncState({ currentReaction: { emoji, senderId: me.id, ts: Date.now() } });
     setShowEmotes(false);
   };
 
   useEffect(() => {
-    if (!roomId || isOfflineRef.current) return;
+    if (!roomId || isOfflineRef.current || isNetworkOffline) return;
     const roomRef = ref(database, `rooms/${roomId}`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -725,7 +752,7 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [roomId]);
+  }, [roomId, isNetworkOffline]);
 
   // ============================================================================
   // 4. LÓGICA E CÉREBRO DO JOGO
@@ -1324,7 +1351,6 @@ export default function App() {
   // 5. COMPONENTES VISUAIS REUTILIZÁVEIS E TELAS
   // ============================================================================
 
-  // NOVA TELA: Cartilha de Regras
   const RulesModal = () => (
     <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-gray-900 border border-blue-500/30 rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 shadow-[0_0_50px_rgba(59,130,246,0.2)]">
@@ -1444,6 +1470,13 @@ export default function App() {
           </button>
         </div>
         <div className="flex flex-col gap-4">
+          <button
+            onClick={forceUpdateGame}
+            className="w-full bg-blue-600/90 text-white font-bold py-2 rounded-xl hover:bg-blue-500 transition-colors flex items-center justify-center gap-2"
+          >
+            <span>🔄</span> Forçar Atualização
+          </button>
+
           <label className="flex justify-between items-center text-white font-medium">
             <span>💾 Lembrar meu Nome</span>
             <input
@@ -1534,21 +1567,21 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-12 md:pt-24 pb-32 font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
-        {/* BOTÃO DE CONFIGURAÇÕES E REGRAS */}
-        <div className="absolute top-6 right-6 flex gap-4">
-          <button
-            onClick={() => setShowRules(true)}
-            className="text-3xl opacity-70 hover:opacity-100 transition-all duration-300"
-            title="Como Jogar"
-          >
-            ❓
-          </button>
+        {/* BOTÕES ALINHADOS EM COLUNA NO TOPO DIREITO */}
+        <div className="absolute top-6 right-4 md:right-6 flex flex-col items-center gap-3 z-50">
           <button
             onClick={() => setShowSettings(true)}
-            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 drop-shadow-md"
             title="Configurações"
           >
             ⚙️
+          </button>
+          <button
+            onClick={() => setShowRules(true)}
+            className="text-2xl opacity-70 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center border border-white/20 shadow-lg"
+            title="Como Jogar"
+          >
+            ❓
           </button>
         </div>
 
@@ -1570,6 +1603,12 @@ export default function App() {
           <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
             Desenvolvido por Ryan Kilberth
           </p>
+
+          {isNetworkOffline && (
+            <div className="w-full bg-red-600/80 text-white font-bold text-xs py-3 px-4 rounded-xl mb-4 animate-pulse text-center border border-red-400 shadow-lg">
+              ⚠️ Sem conexão. Apenas o Modo Computador está disponível.
+            </div>
+          )}
 
           <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8 flex flex-col items-center">
             <div
@@ -1609,7 +1648,7 @@ export default function App() {
               <span className="text-xl">🤖</span> JOGAR SOZINHO
             </button>
 
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 mb-6 opacity-60">
               <div className="h-px bg-white/20 flex-1"></div>
               <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
                 Multiplayer
@@ -1619,7 +1658,12 @@ export default function App() {
 
             <button
               onClick={createRoom}
-              className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95"
+              disabled={isNetworkOffline}
+              className={`w-full font-black py-3 rounded-xl shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95 ${
+                isNetworkOffline
+                  ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500"
+              }`}
             >
               CRIAR NOVA SALA
             </button>
@@ -1628,13 +1672,19 @@ export default function App() {
                 type="number"
                 placeholder="PIN"
                 value={pinInput}
+                disabled={isNetworkOffline}
                 onChange={(e) => setPinInput(e.target.value)}
                 maxLength={4}
-                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest"
+                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest disabled:opacity-50"
               />
               <button
                 onClick={joinRoom}
-                className="bg-blue-600 text-white font-black px-6 py-3 rounded-xl hover:bg-blue-500 shadow-lg uppercase text-sm transition-transform active:scale-95"
+                disabled={isNetworkOffline}
+                className={`font-black px-6 py-3 rounded-xl shadow-lg uppercase text-sm transition-transform active:scale-95 ${
+                  isNetworkOffline
+                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-500"
+                }`}
               >
                 ENTRAR
               </button>
@@ -1660,20 +1710,21 @@ export default function App() {
           ⬅️
         </button>
 
-        <div className="absolute top-6 right-6 flex gap-4 z-50">
-          <button
-            onClick={() => setShowRules(true)}
-            className="text-3xl opacity-70 hover:opacity-100 transition-all duration-300"
-            title="Como Jogar"
-          >
-            ❓
-          </button>
+        {/* BOTÕES ALINHADOS EM COLUNA NO TOPO DIREITO */}
+        <div className="absolute top-6 right-4 md:right-6 flex flex-col items-center gap-3 z-50">
           <button
             onClick={() => setShowSettings(true)}
-            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 drop-shadow-md"
             title="Configurações"
           >
             ⚙️
+          </button>
+          <button
+            onClick={() => setShowRules(true)}
+            className="text-2xl opacity-70 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center border border-white/20 shadow-lg"
+            title="Como Jogar"
+          >
+            ❓
           </button>
         </div>
 
@@ -1756,7 +1807,6 @@ export default function App() {
       }`}
       translate="no"
     >
-      {/* BLOCO DE ESTILOS CSS - FÍSICA E IMPACTO */}
       <style>{`
         @keyframes float-emoji {
           0% { opacity: 0; transform: translateY(50px) scale(0.5); }
@@ -1811,7 +1861,6 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
-      {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
       {activeReaction && (
         <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
           <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
@@ -1820,21 +1869,21 @@ export default function App() {
         </div>
       )}
 
-      {/* BOTÃO DE CONFIGURAÇÕES NA MESA */}
+      {/* BOTÃO DE CONFIGURAÇÕES E REGRAS NA MESA (EM COLUNA) */}
       <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
         <button
-          onClick={() => setShowRules(true)}
-          className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
-          title="Como Jogar"
-        >
-          ❓
-        </button>
-        <button
           onClick={() => setShowSettings(true)}
-          className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
+          className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg"
           title="Configurações"
         >
           ⚙️
+        </button>
+        <button
+          onClick={() => setShowRules(true)}
+          className="text-xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg font-bold"
+          title="Como Jogar"
+        >
+          ❓
         </button>
       </div>
 
@@ -1842,7 +1891,6 @@ export default function App() {
       {showRules && <RulesModal />}
 
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
-        {/* JOGADOR 1 (ESQUERDA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
             turn === playersList[0]?.id ? "bg-white/5" : ""
@@ -1898,7 +1946,6 @@ export default function App() {
           )}
         </div>
 
-        {/* JOGADOR 2 (DIREITA) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
             turn === playersList[1]?.id ? "bg-white/5" : ""
@@ -1941,8 +1988,9 @@ export default function App() {
         </div>
       </div>
 
+      {/* BOLHA DE DICAS FOI MOVIDA MAIS PARA BAIXO */}
       {currentHint && (
-        <div className="absolute top-44 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
+        <div className="absolute bottom-64 md:bottom-56 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
             <button
               onClick={() => setCurrentHint(null)}
@@ -1988,7 +2036,6 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM FÍSICA E IMPACTO DE CARTA */}
         <div className="relative flex flex-col items-center justify-center w-full translate-y-6 md:translate-y-12">
           <div className="flex gap-6 md:gap-12 items-center h-40 md:h-48 z-10">
             {tableCards.map((tc) => {
@@ -2052,7 +2099,8 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            <div className="absolute left-4 bottom-32 md:bottom-12 z-40">
+            {/* BOTÃO DA PILHA MOVIDO PARA CIMA */}
+            <div className="absolute left-4 bottom-48 md:bottom-20 z-40">
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2065,7 +2113,7 @@ export default function App() {
             </div>
 
             {!isSinglePlayer && (
-              <div className="absolute right-4 bottom-32 md:bottom-12 z-40 flex flex-col items-center gap-2">
+              <div className="absolute right-4 bottom-48 md:bottom-20 z-40 flex flex-col items-center gap-2">
                 {showEmotes && (
                   <div className="flex flex-col gap-2 mb-2 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-xl">
                     <button
@@ -2104,12 +2152,13 @@ export default function App() {
               </div>
             )}
 
+            {/* BOTÃO DA DICA MOVIDO PARA CIMA */}
             {turn === me?.id && settings.showHints && (
               <div
                 className={`absolute right-4 ${
                   !isSinglePlayer
-                    ? "bottom-48 md:bottom-28"
-                    : "bottom-32 md:bottom-12"
+                    ? "bottom-[260px] md:bottom-36"
+                    : "bottom-48 md:bottom-20"
                 } z-40 transition-all`}
               >
                 <button
