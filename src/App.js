@@ -382,10 +382,11 @@ export default function App() {
 
   const [showEmotes, setShowEmotes] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
-  const [isShaking, setIsShaking] = useState(false); // NOVO ESTADO: Tremer tela
+  const [isShaking, setIsShaking] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRules, setShowRules] = useState(false); // NOVO ESTADO: Mostrar Cartilha
 
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
@@ -489,7 +490,6 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
       } else if (type === "heavy_card") {
-        // NOVO SOM GRAVE PARA CARTAS PESADAS
         osc.type = "square";
         osc.frequency.setValueAtTime(150, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
@@ -570,6 +570,7 @@ export default function App() {
     setIsSinglePlayer(false);
     isOfflineRef.current = false;
     setShowSettings(false);
+    setShowRules(false);
   };
 
   const createRoom = async () => {
@@ -794,7 +795,6 @@ export default function App() {
     return 0;
   };
 
-  // NOVA FUNÇÃO: Verifica se a carta jogada é "Épica" (Ás/7 no encarte ou 3/2 no corte)
   const checkIfHeavy = (playedCard, currentTable, trump) => {
     if (currentTable.length === 0) {
       return (
@@ -807,7 +807,7 @@ export default function App() {
     const isCorte = playedCard.suit === trump && playedCard.suit !== leadSuit;
 
     if (isEncarte && ["A", "7"].includes(playedCard.label)) return true;
-    if (isCorte && ["3", "2"].includes(playedCard.label)) return true; // Corte só com Manilhas de 10 pts
+    if (isCorte && ["3", "2"].includes(playedCard.label)) return true;
     return false;
   };
 
@@ -966,7 +966,8 @@ export default function App() {
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
     const bot = playersList.find((p) => p.id !== me?.id);
-    if (bot && turn === bot.id) {
+
+    if (bot && turn === bot.id && tableCards.length < playersList.length) {
       const timer = setTimeout(() => {
         const botId = bot.id;
         const currentHands = stateRef.current?.hands || {};
@@ -993,8 +994,13 @@ export default function App() {
             ...stateRef.current.tableCards,
             { playerId: botId, card: cardToPlay, isHeavy },
           ];
+
           let nextTurn = turn;
-          if (newTable.length < playersList.length) nextTurn = me.id;
+          if (newTable.length < playersList.length) {
+            nextTurn = me.id;
+          } else {
+            nextTurn = null;
+          }
           syncState({
             hands: { ...currentHands, [botId]: newHand },
             tableCards: newTable,
@@ -1079,14 +1085,14 @@ export default function App() {
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
       return;
-    if (tableCards.some((tc) => tc.playerId === me.id)) return;
+    if (tableCards.length >= playersList.length) return;
 
     if (
       settings.vibration &&
       navigator.vibrate &&
       !checkIfHeavy(card, tableCards, trumpSuit)
     )
-      navigator.vibrate(40); // Só vibra leve se não for pesada (pesada vibra forte no Audio)
+      navigator.vibrate(40);
 
     setLocalProcessing(true);
     setCurrentHint(null);
@@ -1095,7 +1101,6 @@ export default function App() {
     const myHand = currentHands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
 
-    // ANÁLISE DE PESO: Avalia se a carta jogada foi épica e carimba nela
     const isHeavy = checkIfHeavy(card, tableCards, trumpSuit);
     const newTable = [...tableCards, { playerId: me.id, card, isHeavy }];
 
@@ -1104,6 +1109,8 @@ export default function App() {
       const myIdx = playersList.findIndex((p) => p.id === me.id);
       const nextIdx = (myIdx + 1) % playersList.length;
       nextTurn = playersList[nextIdx].id;
+    } else {
+      nextTurn = null;
     }
     syncState({
       hands: { ...currentHands, [me.id]: newHand },
@@ -1112,7 +1119,6 @@ export default function App() {
     });
   };
 
-  // EFEITO VISUAL E SONORO DA MESA: Dispara apenas quando uma carta nova chega na mesa
   const prevTableLength = useRef(0);
   useEffect(() => {
     if (tableCards.length > prevTableLength.current) {
@@ -1120,7 +1126,7 @@ export default function App() {
       if (lastCard.isHeavy && settings.animations) {
         playSoundEffect("heavy_card");
         setIsShaking(true);
-        setTimeout(() => setIsShaking(false), 400); // Para de tremer após 400ms
+        setTimeout(() => setIsShaking(false), 400);
       } else {
         playSoundEffect("card");
       }
@@ -1317,6 +1323,114 @@ export default function App() {
   // ============================================================================
   // 5. COMPONENTES VISUAIS REUTILIZÁVEIS E TELAS
   // ============================================================================
+
+  // NOVA TELA: Cartilha de Regras
+  const RulesModal = () => (
+    <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-gray-900 border border-blue-500/30 rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 shadow-[0_0_50px_rgba(59,130,246,0.2)]">
+        <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4 sticky top-0 bg-gray-900 z-10">
+          <h2 className="text-2xl font-black text-blue-400 flex items-center gap-2">
+            📖 Cartilha do Toco
+          </h2>
+          <button
+            onClick={() => setShowRules(false)}
+            className="text-white bg-red-600 rounded-full w-8 h-8 font-bold hover:bg-red-500 transition-colors"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="flex flex-col gap-6 text-sm text-gray-200">
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              🎯 O Objetivo
+            </h3>
+            <p>
+              O objetivo de cada rodada é ser o primeiro a alcançar{" "}
+              <strong>31 pontos</strong>. Ao fazer isso, você dá um "Toco" e
+              tira uma vida (❤️) do adversário. Se ele perder as 3 vidas, o Toco
+              é confirmado!
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              🔢 Valor das Cartas (Pontos)
+            </h3>
+            <div className="grid grid-cols-5 gap-2 text-center font-bold">
+              <div className="bg-white/10 rounded p-2">
+                <span className="text-xl block">A</span> 11 pts
+              </div>
+              <div className="bg-white/10 rounded p-2">
+                <span className="text-xl block">7</span> 10 pts
+              </div>
+              <div className="bg-white/10 rounded p-2">
+                <span className="text-xl block">K</span> 4 pts
+              </div>
+              <div className="bg-white/10 rounded p-2">
+                <span className="text-xl block">J</span> 3 pts
+              </div>
+              <div className="bg-white/10 rounded p-2">
+                <span className="text-xl block">Q</span> 2 pts
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              *Cartas 6, 5, 4, 3 e 2 (fora do trunfo) são "limpas" e valem 0
+              pontos.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ✨ O Poder do Trunfo
+            </h3>
+            <p className="mb-2">
+              Quando o naipe é o Trunfo da rodada, as cartas baixas ganham
+              superpoderes e passam a valer pontos:
+            </p>
+            <div className="grid grid-cols-5 gap-2 text-center font-bold">
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">3</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">2</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">4</span> 4 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">5</span> 3 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">6</span> 2 pts
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ⚔️ Hierarquia de Força
+            </h3>
+            <p className="mb-1 text-xs text-gray-400">
+              Quem ganha a mão? (Da mais forte para a mais fraca)
+            </p>
+            <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+              <p className="mb-2">
+                <strong className="text-white">Naipe Normal:</strong>
+                <br /> A &gt; 7 &gt; K &gt; J &gt; Q &gt; 6 &gt; 5 &gt; 4 &gt; 3
+                &gt; 2
+              </p>
+              <p>
+                <strong className="text-blue-400">No Trunfo:</strong>
+                <br /> A &gt; 3 &gt; 7 &gt; 2 &gt; K &gt; 4 &gt; J &gt; 5 &gt; Q
+                &gt; 6
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
   const SettingsModal = () => (
     <div className="absolute inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-gray-900 border border-yellow-500/30 rounded-3xl w-full max-w-sm p-6 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
@@ -1420,13 +1534,26 @@ export default function App() {
         className="min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-800 via-green-900 to-black flex flex-col items-center justify-start pt-12 md:pt-24 pb-32 font-sans p-4 relative overflow-y-auto w-full"
         translate="no"
       >
-        <button
-          onClick={() => setShowSettings(true)}
-          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
-        >
-          ⚙️
-        </button>
+        {/* BOTÃO DE CONFIGURAÇÕES E REGRAS */}
+        <div className="absolute top-6 right-6 flex gap-4">
+          <button
+            onClick={() => setShowRules(true)}
+            className="text-3xl opacity-70 hover:opacity-100 transition-all duration-300"
+            title="Como Jogar"
+          >
+            ❓
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+            title="Configurações"
+          >
+            ⚙️
+          </button>
+        </div>
+
         {showSettings && <SettingsModal />}
+        {showRules && <RulesModal />}
 
         <div className="w-full max-w-sm flex flex-col items-center">
           <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-2 notranslate">
@@ -1532,13 +1659,26 @@ export default function App() {
         >
           ⬅️
         </button>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="absolute top-6 right-6 text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300 z-50"
-        >
-          ⚙️
-        </button>
+
+        <div className="absolute top-6 right-6 flex gap-4 z-50">
+          <button
+            onClick={() => setShowRules(true)}
+            className="text-3xl opacity-70 hover:opacity-100 transition-all duration-300"
+            title="Como Jogar"
+          >
+            ❓
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-3xl opacity-70 hover:opacity-100 hover:rotate-90 transition-all duration-300"
+            title="Configurações"
+          >
+            ⚙️
+          </button>
+        </div>
+
         {showSettings && <SettingsModal />}
+        {showRules && <RulesModal />}
 
         <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
           <span
@@ -1650,7 +1790,6 @@ export default function App() {
         }
         .animate-sweep-right { animation: sweep-right 0.7s ease-in forwards; }
 
-        /* NOVAS ANIMAÇÕES: IMPACTO VISUAL (TERREMOTO E CARTA PESADA) */
         @keyframes screen-shake {
           0%, 100% { transform: translate(0, 0) rotate(0deg); }
           10% { transform: translate(-2px, -3px) rotate(-1deg); }
@@ -1681,13 +1820,26 @@ export default function App() {
         </div>
       )}
 
-      <button
-        onClick={() => setShowSettings(true)}
-        className="absolute top-28 right-2 md:right-4 text-2xl opacity-60 hover:opacity-100 transition-all duration-300 z-50 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
-      >
-        ⚙️
-      </button>
+      {/* BOTÃO DE CONFIGURAÇÕES NA MESA */}
+      <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
+        <button
+          onClick={() => setShowRules(true)}
+          className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
+          title="Como Jogar"
+        >
+          ❓
+        </button>
+        <button
+          onClick={() => setShowSettings(true)}
+          className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full p-2 backdrop-blur-sm border border-white/10 shadow-lg"
+          title="Configurações"
+        >
+          ⚙️
+        </button>
+      </div>
+
       {showSettings && <SettingsModal />}
+      {showRules && <RulesModal />}
 
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
         {/* JOGADOR 1 (ESQUERDA) */}
@@ -1852,7 +2004,6 @@ export default function App() {
                     : "animate-sweep-right"
                   : "opacity-0";
               } else if (isAnimEnabled) {
-                // SE FOR UMA CARTA PESADA (A/7 NO ENCARTE ou 3/2 NO CORTE), USA ANIMAÇÃO DE IMPACTO
                 animationClass = tc.isHeavy
                   ? "animate-heavy-drop"
                   : "animate-deal-table";
