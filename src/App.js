@@ -181,27 +181,32 @@ const CHAT_PHRASES = [
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 
-const PlayerAvatar = ({ src, name, size = "md" }) => {
+const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
   const dim =
     size === "lg"
       ? "w-24 h-24 text-3xl"
       : size === "sm"
-      ? "w-6 h-6 text-xs"
+      ? "w-8 h-8 text-sm"
       : "w-10 h-10 md:w-12 md:h-12 text-lg";
   const initial = name ? name.charAt(0).toUpperCase() : "?";
+  const ringColor = isTurn
+    ? isOpponent
+      ? "ring-4 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]"
+      : "ring-4 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)]"
+    : "border-2 border-white/30 shadow-lg";
 
   if (src) {
     return (
       <img
         src={src}
         alt={name}
-        className={`${dim} rounded-full object-cover border-2 border-white/30 shadow-lg`}
+        className={`${dim} rounded-full object-cover ${ringColor} transition-all duration-300`}
       />
     );
   }
   return (
     <div
-      className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 border-2 border-white/30 flex items-center justify-center shadow-lg text-white font-black`}
+      className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 ${ringColor} flex items-center justify-center text-white font-black transition-all duration-300`}
     >
       {name.includes("Robô") || name === "Computador" ? "🤖" : initial}
     </div>
@@ -360,24 +365,107 @@ const MiniCard = ({ card, settings }) => {
   );
 };
 
-const CardBack = ({ settings }) => {
+const CardBack = ({ settings, isMini = false }) => {
   const { cardSize } = settings;
-  const sizeClasses =
-    cardSize === "large"
-      ? "w-[84px] h-[120px] md:w-28 md:h-40"
-      : "w-[72px] h-[104px] md:w-24 md:h-36";
+  const sizeClasses = isMini
+    ? "w-10 h-14 md:w-12 md:h-16 border"
+    : cardSize === "large"
+    ? "w-[84px] h-[120px] md:w-28 md:h-40 border-2"
+    : "w-[72px] h-[104px] md:w-24 md:h-36 border-2";
+
   return (
     <div
-      className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-2 border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-2`}
+      className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-1 md:p-2`}
       style={{
         backgroundImage:
           "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
       }}
     >
       <div className="absolute inset-1 border border-white/50 rounded-md md:rounded-lg pointer-events-none"></div>
-      <div className="w-8 h-12 md:w-10 md:h-16 border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80 p-1">
-        <span className="text-white/20 text-2xl md:text-3xl">♠</span>
+      <div
+        className={`${
+          isMini ? "w-4 h-6" : "w-8 h-12 md:w-10 md:h-16"
+        } border-2 border-white/30 rounded-lg flex items-center justify-center bg-blue-800/80`}
+      >
+        <span className="text-white/20 text-lg md:text-3xl">♠</span>
       </div>
+    </div>
+  );
+};
+
+// COMPONENTE: Oponente na Borda da Mesa
+const EdgePlayer = ({
+  player,
+  handCount,
+  position,
+  isTurn,
+  isOpponent,
+  tocoTarget,
+  lives,
+  settings,
+}) => {
+  if (!player) return null;
+  const isTarget = tocoTarget === player.id;
+
+  let containerClass = "absolute flex flex-col items-center z-10 ";
+  let cardRotation = "";
+  let cardStackClass = "flex -space-x-3";
+  let flexDir = "flex-col";
+  let infoAlign = "text-center";
+
+  if (position === "top") {
+    containerClass += "top-14 left-1/2 -translate-x-1/2";
+  } else if (position === "left") {
+    containerClass +=
+      "left-2 md:left-4 top-[40%] -translate-y-1/2 flex-row gap-2";
+    cardRotation = "rotate-90";
+    cardStackClass = "flex flex-col -space-y-6";
+    flexDir = "flex-col items-start";
+    infoAlign = "text-left";
+  } else if (position === "right") {
+    containerClass +=
+      "right-2 md:right-4 top-[40%] -translate-y-1/2 flex-row-reverse gap-2";
+    cardRotation = "-rotate-90";
+    cardStackClass = "flex flex-col -space-y-6";
+    flexDir = "flex-col items-end";
+    infoAlign = "text-right";
+  }
+
+  return (
+    <div className={containerClass}>
+      <div className={`flex ${flexDir} gap-1 mb-2 ${infoAlign}`}>
+        <PlayerAvatar
+          src={player.avatar}
+          name={player.name}
+          size="sm"
+          isTurn={isTurn}
+          isOpponent={isOpponent}
+        />
+        <div className="bg-black/50 backdrop-blur rounded px-2 py-0.5 text-white/90">
+          <span className="text-[10px] md:text-xs font-bold block truncate max-w-[80px]">
+            {player.name}
+          </span>
+          {isTarget && (
+            <div className="flex gap-0.5 mt-0.5 justify-center">
+              {[...Array(lives)].map((_, i) => (
+                <span key={i} className="text-[8px]">
+                  ❤️
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {handCount > 0 && (
+        <div
+          className={`${cardStackClass} ${cardRotation} transition-all duration-300 scale-90 md:scale-100 opacity-80 hover:opacity-100`}
+        >
+          {Array.from({ length: handCount }).map((_, i) => (
+            <CardBack key={i} settings={settings} isMini={true} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -738,7 +826,7 @@ export default function App() {
     if (selectedMode === "2v2") {
       bots["bot_1"] = {
         id: "bot_1",
-        name: "Robô Direita",
+        name: "Robô Esquerda",
         isHost: false,
         avatar: "",
       };
@@ -750,7 +838,7 @@ export default function App() {
       };
       bots["bot_3"] = {
         id: "bot_3",
-        name: "Robô Esquerda",
+        name: "Robô Direita",
         isHost: false,
         avatar: "",
       };
@@ -837,11 +925,13 @@ export default function App() {
   const trickFeedback = roomData?.trickFeedback || null;
   const roundResult = roomData?.roundResult || null;
 
+  // LÓGICA DE POSICIONAMENTO E TIMES
   const myIdx =
     playersList.findIndex((p) => p.id === me?.id) !== -1
       ? playersList.findIndex((p) => p.id === me?.id)
       : 0;
   const is2v2 = gameMode === "2v2";
+
   const myTeam = is2v2
     ? [playersList[myIdx], playersList[(myIdx + 2) % 4]].filter(Boolean)
     : [playersList[myIdx]];
@@ -850,6 +940,12 @@ export default function App() {
         Boolean
       )
     : [playersList[(myIdx + 1) % 2]];
+
+  const leftPlayer = is2v2 ? playersList[(myIdx + 1) % 4] : null;
+  const topPlayer = is2v2
+    ? playersList[(myIdx + 2) % 4]
+    : playersList[(myIdx + 1) % 2];
+  const rightPlayer = is2v2 ? playersList[(myIdx + 3) % 4] : null;
 
   const myTeamScore = myTeam.reduce(
     (acc, p) => acc + (roundScores[p?.id] || 0),
@@ -1084,10 +1180,14 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
+  // CORREÇÃO: O Bot não trava mais na tela de Escolha de Trunfo (Aguardando Trunfo)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
-    const bot = playersList.find((p) => p.id !== me?.id);
-    if (bot && tocoTarget === bot.id) {
+
+    const currentTargetPlayer = playersList.find((p) => p.id === tocoTarget);
+
+    // Se o alvo for um bot, ele escolhe o trunfo automaticamente
+    if (currentTargetPlayer && currentTargetPlayer.id !== me?.id) {
       const timer = setTimeout(() => {
         const suits = Object.keys(SUITS);
         const randomSuit = suits[Math.floor(Math.random() * suits.length)];
@@ -1095,7 +1195,7 @@ export default function App() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, tocoTarget]);
+  }, [gameState, tocoTarget, playersList, me?.id]);
 
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
@@ -1380,7 +1480,6 @@ export default function App() {
     }
   };
 
-  // ATUALIZADO: ROTAÇÃO DO TOCO COM REGRAS DE FUGA E DERROTA
   const handleGameEnd = (winningTeam) => {
     const {
       tocoTarget: currentTarget,
@@ -1407,27 +1506,22 @@ export default function App() {
     }
 
     if (targetIsInWinningTeam) {
-      // SE LIVROU! Passa a bomba para o próximo da roda (+1 índice)
       let nextOpIdx = (currentTargetIdx + 1) % playersList.length;
       resultType = "escaped";
       updates = { tocoTarget: playersList[nextOpIdx].id, lives: 3 };
     } else {
-      // PERDEU UMA MÃO (OU TODAS)
       const newLives = currentLives - 1;
       updates = { lives: newLives };
 
       if (newLives > 0) {
         resultType = "life_lost";
       } else {
-        // TOCO CONFIRMADO!
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
 
-        // Todo o time perdedor ganha um toco
         const loserTeam = winningTeam === myTeam ? opTeam : myTeam;
         loserTeam.forEach((p) => (gPoints[p.id] = (gPoints[p.id] || 0) + 1));
 
-        // O Alvo passa para o PARCEIRO (+2 índices na roda)
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
 
         updates = {
@@ -1988,8 +2082,6 @@ export default function App() {
   }
 
   const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p.id !== me?.id);
-  const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
   const myTricks = trickHistory.filter((t) =>
     myTeam.some((p) => p.id === t.winnerId)
@@ -2067,6 +2159,36 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
+      {/* PLACAR SUPERIOR SIMPLIFICADO */}
+      <div className="absolute top-0 left-0 w-full h-10 bg-black/60 backdrop-blur-md flex justify-between items-center px-4 z-40 border-b border-white/10 shadow-lg">
+        <div className="text-yellow-400 font-black text-sm md:text-lg flex items-center gap-2">
+          <span>NÓS:</span>
+          <span className="text-white bg-white/10 px-2 rounded">
+            {myTeamScore}
+            <span className="text-xs text-gray-400">/31</span>
+          </span>
+          <span className="text-[10px] text-gray-400 ml-1 hidden md:inline">
+            ({myTeamTocos} TOCOS)
+          </span>
+        </div>
+        <div className="text-xs text-gray-500 font-bold uppercase tracking-widest flex items-center gap-2">
+          VS{" "}
+          <span className="bg-black/80 px-2 py-0.5 rounded text-[10px] text-yellow-500 border border-white/5">
+            {gameMode} {roomId ? `| ${roomId}` : ""}
+          </span>
+        </div>
+        <div className="text-red-400 font-black text-sm md:text-lg flex items-center gap-2">
+          <span className="text-[10px] text-gray-400 mr-1 hidden md:inline">
+            ({opTeamTocos} TOCOS)
+          </span>
+          <span className="text-white bg-white/10 px-2 rounded">
+            {opTeamScore}
+            <span className="text-xs text-gray-400">/31</span>
+          </span>
+          <span>ELES</span>
+        </div>
+      </div>
+
       {activeReaction && (
         <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
           <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
@@ -2085,7 +2207,8 @@ export default function App() {
         </div>
       )}
 
-      <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
+      {/* BOTÕES DE CIMA DIREITA */}
+      <div className="absolute top-14 right-2 md:right-4 flex flex-col gap-3 z-50">
         <button
           onClick={() => setShowSettings(true)}
           className="text-2xl opacity-60 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg"
@@ -2105,107 +2228,6 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
-      <div className="grid grid-cols-[1fr_auto_1fr] w-full bg-black/40 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20 py-2">
-        <div className={`flex flex-col justify-center px-4 overflow-hidden`}>
-          <div className="flex items-center gap-2">
-            <div className="flex -space-x-3">
-              {myTeam.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`z-[${10 - i}] ${
-                    turn === p.id ? "ring-2 ring-yellow-400 rounded-full" : ""
-                  }`}
-                >
-                  <PlayerAvatar src={p.avatar} name={p.name} />
-                </div>
-              ))}
-            </div>
-            <span className="font-black text-lg md:text-xl drop-shadow truncate text-yellow-400">
-              NÓS
-            </span>
-          </div>
-          <div className="flex items-end justify-between mt-2 pl-2">
-            <span className="text-white font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
-              {myTeamScore}
-              <span className="text-xs md:text-sm text-gray-400 font-sans">
-                /31
-              </span>
-            </span>
-            <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
-              Tocos:{" "}
-              <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
-                {myTeamTocos}
-              </span>
-            </span>
-          </div>
-          {myTeam.some((p) => p.id === tocoTarget) && (
-            <div className="flex flex-shrink-0 text-sm mt-1 drop-shadow">
-              {[...Array(lives)].map((_, i) => (
-                <span key={i}>❤️</span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
-          <span className="text-gray-500 font-black text-sm italic mb-1">
-            VS
-          </span>
-          {!isSinglePlayer && (
-            <span
-              className="text-[9px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
-              title="PIN da Sala"
-            >
-              {roomId}
-            </span>
-          )}
-          <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">
-            {gameMode}
-          </span>
-        </div>
-
-        <div className={`flex flex-col justify-center px-4 overflow-hidden`}>
-          <div className="flex items-center flex-row-reverse gap-2">
-            <div className="flex -space-x-3 flex-row-reverse space-x-reverse">
-              {opTeam.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`z-[${10 - i}] ${
-                    turn === p.id ? "ring-2 ring-red-400 rounded-full" : ""
-                  }`}
-                >
-                  <PlayerAvatar src={p.avatar} name={p.name} />
-                </div>
-              ))}
-            </div>
-            <span className="font-black text-lg md:text-xl drop-shadow truncate text-right text-red-400">
-              ELES
-            </span>
-          </div>
-          <div className="flex items-end justify-between mt-2 pr-2 flex-row-reverse">
-            <span className="text-white font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
-              {opTeamScore}
-              <span className="text-xs md:text-sm text-gray-400 font-sans">
-                /31
-              </span>
-            </span>
-            <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
-              Tocos:{" "}
-              <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
-                {opTeamTocos}
-              </span>
-            </span>
-          </div>
-          {opTeam.some((p) => p.id === tocoTarget) && (
-            <div className="flex flex-shrink-0 text-sm mt-1 drop-shadow justify-end">
-              {[...Array(lives)].map((_, i) => (
-                <span key={i}>❤️</span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       {currentHint && (
         <div className="absolute bottom-64 md:bottom-56 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
@@ -2222,31 +2244,65 @@ export default function App() {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center relative w-full">
-        <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2 opacity-50">
-          {showCards &&
-            Array.from({ length: 4 }).map((_, i) => (
-              <CardBack key={i} settings={settings} />
-            ))}
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center relative w-full mt-10">
+        {/* RENDERIZAÇÃO DOS OPONENTES E PARCEIRO NA BORDA DA TELA */}
+        {showCards && topPlayer && (
+          <EdgePlayer
+            player={topPlayer}
+            position="top"
+            handCount={hands[topPlayer.id]?.length || 0}
+            isTurn={turn === topPlayer.id}
+            isOpponent={is2v2 ? false : true}
+            tocoTarget={tocoTarget}
+            lives={lives}
+            settings={settings}
+          />
+        )}
 
-        <div className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4">
+        {showCards && leftPlayer && (
+          <EdgePlayer
+            player={leftPlayer}
+            position="left"
+            handCount={hands[leftPlayer.id]?.length || 0}
+            isTurn={turn === leftPlayer.id}
+            isOpponent={true}
+            tocoTarget={tocoTarget}
+            lives={lives}
+            settings={settings}
+          />
+        )}
+
+        {showCards && rightPlayer && (
+          <EdgePlayer
+            player={rightPlayer}
+            position="right"
+            handCount={hands[rightPlayer.id]?.length || 0}
+            isTurn={turn === rightPlayer.id}
+            isOpponent={true}
+            tocoTarget={tocoTarget}
+            lives={lives}
+            settings={settings}
+          />
+        )}
+
+        {/* ÁREA CENTRAL: Baralho e Trunfo */}
+        <div className="absolute left-4 md:left-24 top-[15%] md:top-[20%] flex flex-col items-center gap-4 opacity-80 hover:opacity-100 transition-opacity">
           {deck.length > 0 && (
             <div
-              className="w-[52px] h-[76px] md:w-20 md:h-28 bg-blue-900 border-2 border-white/50 rounded-lg flex items-center justify-center shadow-2xl relative"
+              className="w-12 h-16 md:w-16 md:h-24 bg-blue-900 border-2 border-white/50 rounded-lg flex items-center justify-center shadow-xl relative"
               style={{
                 backgroundImage:
                   "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
               }}
             >
               <div className="absolute inset-1 border border-white/30 rounded border-dashed"></div>
-              <div className="absolute -top-2 -right-2 bg-red-600 text-[10px] md:text-xs text-white font-bold rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center border-2 border-white shadow">
+              <div className="absolute -top-2 -right-2 bg-red-600 text-[10px] text-white font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white shadow">
                 {deck.length}
               </div>
             </div>
           )}
           {trumpSuit && (
-            <div className="w-10 h-10 md:w-14 md:h-14 bg-white rounded-full border-4 border-yellow-500 flex items-center justify-center text-xl md:text-3xl shadow-[0_0_15px_rgba(250,204,21,0.5)]">
+            <div className="w-8 h-8 md:w-12 md:h-12 bg-white rounded-full border-2 md:border-4 border-yellow-500 flex items-center justify-center text-lg md:text-2xl shadow-[0_0_15px_rgba(250,204,21,0.5)]">
               <span className={`${SUITS[trumpSuit].defaultColor} font-sans`}>
                 {SUITS[trumpSuit].symbol}
               </span>
@@ -2258,7 +2314,9 @@ export default function App() {
           <div className="flex gap-4 md:gap-8 items-center h-40 md:h-48 z-10 flex-wrap justify-center px-4">
             {tableCards.map((tc) => {
               const sweepingTo = roomData?.sweepingTo;
-              const isLeft = sweepingTo === playersList[0]?.id;
+              const isLeft =
+                sweepingTo === playersList[0]?.id ||
+                sweepingTo === leftPlayer?.id;
               const isAnimEnabled = settings.animations ?? true;
 
               let animationClass = "";
@@ -2311,9 +2369,29 @@ export default function App() {
       </div>
 
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
+        {/* AVATAR DO JOGADOR LOCAL NO CANTO ESQUERDO INFERIOR */}
+        <div className="absolute left-4 bottom-48 md:bottom-20 z-40 flex flex-col items-center gap-1">
+          <PlayerAvatar
+            src={me?.avatar}
+            name={playerName}
+            size="sm"
+            isTurn={turn === me?.id}
+            isOpponent={false}
+          />
+          {tocoTarget === me?.id && (
+            <div className="flex gap-0.5 mt-0.5 justify-center">
+              {[...Array(lives)].map((_, i) => (
+                <span key={i} className="text-[8px]">
+                  ❤️
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {showCards && (
           <>
-            <div className="absolute left-4 bottom-48 md:bottom-20 z-40">
+            <div className="absolute left-16 bottom-48 md:bottom-20 z-40">
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
