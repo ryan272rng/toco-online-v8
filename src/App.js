@@ -190,7 +190,6 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
       : "w-10 h-10 md:w-12 md:h-12 text-lg";
   const initial = name ? name.charAt(0).toUpperCase() : "?";
 
-  // Condicional de Borda: Se não tem isTurn explícito (modo antigo), usa borda normal branca
   let ringColor = "border-2 border-white/30 shadow-lg";
   if (isTurn !== undefined) {
     ringColor = isTurn
@@ -380,7 +379,7 @@ const CardBack = ({ settings, isMini = false }) => {
 
   return (
     <div
-      className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-white/80 shadow-2xl flex items-center justify-center relative overflow-hidden p-1 md:p-2`}
+      className={`${sizeClasses} bg-blue-900 rounded-lg md:rounded-xl border-white/80 shadow-lg flex items-center justify-center relative overflow-hidden p-1 md:p-2`}
       style={{
         backgroundImage:
           "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
@@ -398,7 +397,7 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
-// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2)
+// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2) - AGORA COM LEQUE!
 const EdgePlayer = ({
   player,
   handCount,
@@ -414,18 +413,28 @@ const EdgePlayer = ({
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all ";
+  let flexDir = "flex-col";
+  let infoAlign = "text-center";
 
+  // Posicionamento ajustado para não encavalar
   if (position === "top") {
-    containerClass += "top-28 md:top-32 left-1/2 -translate-x-1/2";
+    containerClass += "top-[12%] left-1/2 -translate-x-1/2";
   } else if (position === "left") {
-    containerClass += "left-2 md:left-6 top-[60%] -translate-y-1/2";
+    containerClass +=
+      "left-2 md:left-6 top-[60%] -translate-y-1/2 flex-row gap-4";
+    flexDir = "flex-col items-start";
+    infoAlign = "text-left";
   } else if (position === "right") {
-    containerClass += "right-2 md:right-6 top-[60%] -translate-y-1/2";
+    containerClass +=
+      "right-2 md:right-6 top-[60%] -translate-y-1/2 flex-row-reverse gap-4";
+    flexDir = "flex-col items-end";
+    infoAlign = "text-right";
   }
 
   return (
     <div className={containerClass}>
-      <div className={`flex flex-col items-center gap-1 mb-2 text-center`}>
+      {/* Avatar e Info */}
+      <div className={`flex ${flexDir} gap-1 text-center`}>
         <PlayerAvatar
           src={player.avatar}
           name={player.name}
@@ -433,7 +442,9 @@ const EdgePlayer = ({
           isTurn={isTurn}
           isOpponent={isOpponent}
         />
-        <div className="bg-black/50 backdrop-blur rounded px-2 py-0.5 text-white/90 flex flex-col items-center gap-0.5 shadow-md border border-white/10">
+        <div
+          className={`bg-black/50 backdrop-blur rounded px-2 py-0.5 text-white/90 flex flex-col ${infoAlign} gap-0.5 shadow-md border border-white/10`}
+        >
           <span className="text-[10px] md:text-xs font-bold block truncate max-w-[70px]">
             {player.name}
           </span>
@@ -449,14 +460,48 @@ const EdgePlayer = ({
         </div>
       </div>
 
-      {/* Cartas lado a lado e não empilhadas (Para todos das bordas) */}
+      {/* Mão de Cartas em formato de Leque Curvo */}
       {handCount > 0 && (
         <div
-          className={`flex flex-row -space-x-3 md:-space-x-4 transition-all duration-300 opacity-90 hover:opacity-100`}
+          className={`relative flex ${
+            position === "top" ? "flex-row -space-x-5" : "flex-col -space-y-8"
+          } items-center justify-center transition-all duration-300 opacity-90 hover:opacity-100 ${
+            position === "top" ? "mt-2" : ""
+          }`}
         >
-          {Array.from({ length: handCount }).map((_, i) => (
-            <CardBack key={i} settings={settings} isMini={true} />
-          ))}
+          {Array.from({ length: handCount }).map((_, i) => {
+            // Matemática do Leque: Rotaciona e translada dependendo da posição da carta
+            const offset = i - (handCount - 1) / 2;
+            const angle = offset * 12; // Abertura do leque (12 graus)
+            let transformStyle = "";
+
+            if (position === "top") {
+              transformStyle = `rotate(${angle}deg) translateY(${
+                Math.abs(offset) * 4
+              }px)`;
+            } else if (position === "left") {
+              transformStyle = `rotate(${90 + angle}deg) translateX(${
+                -Math.abs(offset) * 4
+              }px)`;
+            } else if (position === "right") {
+              transformStyle = `rotate(${-90 + angle}deg) translateX(${
+                Math.abs(offset) * 4
+              }px)`;
+            }
+
+            return (
+              <div
+                key={i}
+                style={{
+                  transform: transformStyle,
+                  transformOrigin: "center center",
+                }}
+                className="transition-all duration-300 drop-shadow-md"
+              >
+                <CardBack settings={settings} isMini={true} />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -2075,9 +2120,10 @@ export default function App() {
   const opponent = playersList.find((p) => p.id !== me?.id); // Usado apenas no 1v1
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
-  const myTricks = trickHistory.filter((t) =>
-    myTeam.some((p) => p.id === t.winnerId)
-  );
+
+  const myTricks = is2v2
+    ? trickHistory.filter((t) => myTeam.some((p) => p.id === t.winnerId))
+    : trickHistory.filter((t) => t.winnerId === me?.id);
 
   // --- TELA DA MESA DE JOGO ---
   return (
@@ -2151,7 +2197,7 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
-      {/* PLACAR UNIFICADO (RESTAURADO PARA PADRÃO ANTIGO NOS DOIS MODOS) */}
+      {/* PLACAR SUPERIOR */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
         {/* LADO ESQUERDO (Eu no 1v1 ou NÓS no 2v2) */}
         <div
@@ -2357,12 +2403,13 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
+      {/* BALÃO DE DICAS: Mais para baixo e In-clicável para não atrapalhar */}
       {currentHint && (
-        <div className="absolute bottom-64 md:bottom-56 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
-          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative">
+        <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
+          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
             <button
               onClick={() => setCurrentHint(null)}
-              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50"
+              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50 cursor-pointer"
             >
               X
             </button>
@@ -2383,7 +2430,7 @@ export default function App() {
           </div>
         )}
 
-        {/* RENDERIZAÇÃO DOS OPONENTES E PARCEIRO NA BORDA DA TELA (SOMENTE 2v2) */}
+        {/* RENDERIZAÇÃO DOS OPONENTES E PARCEIRO NA BORDA DA TELA (SOMENTE 2v2 COM LEQUE) */}
         {is2v2 && showCards && topPlayer && (
           <EdgePlayer
             player={topPlayer}
@@ -2466,8 +2513,21 @@ export default function App() {
           )}
         </div>
 
-        <div className="relative flex flex-col items-center justify-center w-full translate-y-6 md:translate-y-12">
-          <div className="flex gap-4 md:gap-8 items-center h-40 md:h-48 z-10 flex-wrap justify-center px-4">
+        {/* ÁREA DA MESA COM CARTAS JOGADAS (ORGANIZADAS EM PARES) */}
+        <div
+          className={`relative flex flex-col items-center justify-center w-full ${
+            is2v2
+              ? "translate-y-2 md:translate-y-6"
+              : "translate-y-6 md:translate-y-12"
+          }`}
+        >
+          <div
+            className={`${
+              is2v2
+                ? "grid grid-cols-2 gap-x-8 gap-y-4"
+                : "flex gap-4 md:gap-8 flex-wrap"
+            } items-center justify-items-center min-h-[160px] z-10 px-4`}
+          >
             {tableCards.map((tc) => {
               const sweepingTo = roomData?.sweepingTo;
               const isLeft =
@@ -2525,35 +2585,17 @@ export default function App() {
       </div>
 
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
-        {/* AVATAR DO JOGADOR LOCAL NO CANTO ESQUERDO INFERIOR APENAS NO 2V2 */}
-        {is2v2 && (
-          <div className="absolute left-4 bottom-48 md:bottom-20 z-40 flex flex-col items-center gap-1">
-            <PlayerAvatar
-              src={me?.avatar}
-              name={playerName}
-              size="sm"
-              isTurn={turn === me?.id}
-              isOpponent={false}
-            />
-            {tocoTarget === me?.id && (
-              <div className="flex gap-0.5 mt-0.5 justify-center">
-                {[...Array(lives)].map((_, i) => (
-                  <span key={i} className="text-[8px]">
-                    ❤️
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
         {showCards && (
           <>
+            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA NO 2V2 */}
             <div
-              className={`absolute ${
-                is2v2 ? "left-16" : "left-4"
-              } bottom-48 md:bottom-20 z-40`}
+              className={`absolute left-4 ${
+                is2v2
+                  ? "bottom-32 md:bottom-12 gap-6"
+                  : "bottom-48 md:bottom-20 gap-2"
+              } z-40 flex flex-col items-center`}
             >
+              {/* Botão Mãos */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2563,6 +2605,28 @@ export default function App() {
                   Mãos ({myTricks.length})
                 </span>
               </button>
+
+              {/* Avatar do Jogador (Só aparece na mesa no modo 2v2) */}
+              {is2v2 && (
+                <div className="flex flex-col items-center gap-1">
+                  <PlayerAvatar
+                    src={me?.avatar}
+                    name={playerName}
+                    size="sm"
+                    isTurn={turn === me?.id}
+                    isOpponent={false}
+                  />
+                  {tocoTarget === me?.id && (
+                    <div className="flex gap-0.5 mt-0.5 justify-center">
+                      {[...Array(lives)].map((_, i) => (
+                        <span key={i} className="text-[8px]">
+                          ❤️
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {!isSinglePlayer && (
