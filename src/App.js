@@ -156,7 +156,6 @@ const RANKS = [
 
 const POINTS_GOAL = 31;
 
-// ESTILOS DA MESA E CHAT
 const TABLE_STYLES = {
   tradicional: "from-green-800 via-green-900 to-black",
   taverna: "from-amber-800 via-amber-900 to-orange-950",
@@ -204,7 +203,7 @@ const PlayerAvatar = ({ src, name, size = "md" }) => {
     <div
       className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 border-2 border-white/30 flex items-center justify-center shadow-lg text-white font-black`}
     >
-      {name === "Computador" ? "🤖" : initial}
+      {name.includes("Robô") || name === "Computador" ? "🤖" : initial}
     </div>
   );
 };
@@ -398,23 +397,23 @@ export default function App() {
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
   const isOfflineRef = useRef(false);
 
-  const [isNetworkOffline, setIsNetworkOffline] = useState(!navigator.onLine);
+  const [selectedMode, setSelectedMode] = useState("1v1");
 
+  const [isNetworkOffline, setIsNetworkOffline] = useState(!navigator.onLine);
   const [localProcessing, setLocalProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
 
   const [showEmotes, setShowEmotes] = useState(false);
-  const [showChat, setShowChat] = useState(false); // NOVO ESTADO: Botão do Chat
+  const [showChat, setShowChat] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
-  const [activeChatMessage, setActiveChatMessage] = useState(null); // NOVO ESTADO: Balão de Chat Ativo
+  const [activeChatMessage, setActiveChatMessage] = useState(null);
   const [isShaking, setIsShaking] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showRules, setShowRules] = useState(false);
 
-  // ATUALIZADO O DEFAULT: Baralho default (branco) e mesa tradicional
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
     return saved
@@ -466,11 +465,10 @@ export default function App() {
     }
   }, [roomData?.currentReaction?.ts]);
 
-  // NOVO EFFECT: Monitorar mensagens do Chat
   useEffect(() => {
     if (roomData?.currentMessage) {
       setActiveChatMessage(roomData.currentMessage);
-      const timer = setTimeout(() => setActiveChatMessage(null), 3500); // 3.5 segundos para ler
+      const timer = setTimeout(() => setActiveChatMessage(null), 3500);
       return () => clearTimeout(timer);
     }
   }, [roomData?.currentMessage?.ts]);
@@ -492,7 +490,6 @@ export default function App() {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -501,7 +498,6 @@ export default function App() {
         const MAX_SIZE = 100;
         let width = img.width;
         let height = img.height;
-
         if (width > height) {
           if (width > MAX_SIZE) {
             height *= MAX_SIZE / width;
@@ -517,7 +513,6 @@ export default function App() {
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
-
         const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
         setAvatarBase64(compressedBase64);
         localStorage.setItem("tocoPlayerAvatar", compressedBase64);
@@ -646,6 +641,7 @@ export default function App() {
     const initialRoomData = {
       gameState: "lobby",
       hostId: myId,
+      gameMode: selectedMode,
       players: { [myId]: newMe },
       deck: [],
       tableCards: [],
@@ -686,6 +682,8 @@ export default function App() {
         (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
       );
 
+      const maxPlayers = currentRoomData.gameMode === "2v2" ? 4 : 2;
+
       let myId;
       let newMe;
 
@@ -696,7 +694,7 @@ export default function App() {
           await update(ref(database, `rooms/${pinInput}/players/${myId}`), {
             avatar: avatarBase64,
           });
-      } else if (existingPlayers.length >= 2) {
+      } else if (existingPlayers.length >= maxPlayers) {
         return setErrorMsg("A sala já está cheia!");
       } else {
         myId = `player_${Date.now()}`;
@@ -729,19 +727,41 @@ export default function App() {
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
-    const botId = `bot_1`;
     const newMe = {
       id: myId,
       name: playerName,
       isHost: true,
       avatar: avatarBase64,
     };
-    const botPlayer = {
-      id: botId,
-      name: "Computador",
-      isHost: false,
-      avatar: "",
-    };
+
+    const bots = {};
+    if (selectedMode === "2v2") {
+      bots["bot_1"] = {
+        id: "bot_1",
+        name: "Robô Direita",
+        isHost: false,
+        avatar: "",
+      };
+      bots["bot_2"] = {
+        id: "bot_2",
+        name: "Robô Aliado",
+        isHost: false,
+        avatar: "",
+      };
+      bots["bot_3"] = {
+        id: "bot_3",
+        name: "Robô Esquerda",
+        isHost: false,
+        avatar: "",
+      };
+    } else {
+      bots["bot_1"] = {
+        id: "bot_1",
+        name: "Computador",
+        isHost: false,
+        avatar: "",
+      };
+    }
 
     setMe(newMe);
     setIsSinglePlayer(true);
@@ -751,14 +771,15 @@ export default function App() {
     const initialRoomData = {
       gameState: "choose_trump",
       hostId: myId,
-      players: { [myId]: newMe, [botId]: botPlayer },
+      gameMode: selectedMode,
+      players: { [myId]: newMe, ...bots },
       deck: createDeepShuffleDeck(),
       tableCards: [],
       trumpSuit: null,
       turn: null,
       hands: {},
-      roundScores: { [myId]: 0, [botId]: 0 },
-      gamePoints: { [myId]: 0, [botId]: 0 },
+      roundScores: {},
+      gamePoints: {},
       tocoTarget: myId,
       lives: 3,
       trickHistory: [],
@@ -777,7 +798,6 @@ export default function App() {
     setShowEmotes(false);
   };
 
-  // NOVA FUNÇÃO: Enviar Chat de Texto
   const sendChatMessage = (text) => {
     if (isNetworkOffline) return;
     syncState({ currentMessage: { text, senderId: me.id, ts: Date.now() } });
@@ -803,6 +823,7 @@ export default function App() {
   // ============================================================================
   const playersList = roomData?.players ? Object.values(roomData.players) : [];
   const gameState = roomData?.gameState || "lobby";
+  const gameMode = roomData?.gameMode || "1v1";
   const tableCards = roomData?.tableCards || [];
   const deck = roomData?.deck || [];
   const hands = roomData?.hands || {};
@@ -815,6 +836,37 @@ export default function App() {
   const trickHistory = roomData?.trickHistory || [];
   const trickFeedback = roomData?.trickFeedback || null;
   const roundResult = roomData?.roundResult || null;
+
+  const myIdx =
+    playersList.findIndex((p) => p.id === me?.id) !== -1
+      ? playersList.findIndex((p) => p.id === me?.id)
+      : 0;
+  const is2v2 = gameMode === "2v2";
+  const myTeam = is2v2
+    ? [playersList[myIdx], playersList[(myIdx + 2) % 4]].filter(Boolean)
+    : [playersList[myIdx]];
+  const opTeam = is2v2
+    ? [playersList[(myIdx + 1) % 4], playersList[(myIdx + 3) % 4]].filter(
+        Boolean
+      )
+    : [playersList[(myIdx + 1) % 2]];
+
+  const myTeamScore = myTeam.reduce(
+    (acc, p) => acc + (roundScores[p?.id] || 0),
+    0
+  );
+  const opTeamScore = opTeam.reduce(
+    (acc, p) => acc + (roundScores[p?.id] || 0),
+    0
+  );
+  const myTeamTocos = myTeam.reduce(
+    (acc, p) => acc + (gamePoints[p?.id] || 0),
+    0
+  );
+  const opTeamTocos = opTeam.reduce(
+    (acc, p) => acc + (gamePoints[p?.id] || 0),
+    0
+  );
 
   const getCardPower = (card, currentTrump, leadSuit) => {
     const basePower = {
@@ -905,15 +957,20 @@ export default function App() {
     );
 
     if (!isFirstToPlay) {
-      const opCard = currentTable[0].card;
-      const leadSuit = opCard.suit;
-      const tablePoints = getCardPoints(opCard, currentTrump);
-      const opPower = getCardPower(opCard, currentTrump, leadSuit);
+      const leadSuit = currentTable[0].card.suit;
+      let maxTablePower = 0;
+      let tablePoints = 0;
+      for (let tc of currentTable) {
+        tablePoints += getCardPoints(tc.card, currentTrump);
+        let pwr = getCardPower(tc.card, currentTrump, leadSuit);
+        if (pwr > maxTablePower) maxTablePower = pwr;
+      }
+
       for (let card of currentHand) {
         const cardPts = getCardPoints(card, currentTrump);
         const cardPower = getCardPower(card, currentTrump, leadSuit);
         if (
-          cardPower > opPower &&
+          cardPower > maxTablePower &&
           currentScore + tablePoints + cardPts >= POINTS_GOAL
         )
           return card;
@@ -924,14 +981,20 @@ export default function App() {
       if (lowTrumps.length > 0) return lowTrumps[0];
       return sortedHandByPtsAsc[0];
     } else {
-      const opCard = currentTable[0].card;
-      const opPts = getCardPoints(opCard, currentTrump);
-      const leadSuit = opCard.suit;
-      const opPower = getCardPower(opCard, currentTrump, leadSuit);
-      const opIsTrump = opCard.suit === currentTrump;
+      const leadSuit = currentTable[0].card.suit;
+      let maxTablePower = 0;
+      let opPts = 0;
+      let hasTrumpOnTable = false;
+
+      for (let tc of currentTable) {
+        opPts += getCardPoints(tc.card, currentTrump);
+        let pwr = getCardPower(tc.card, currentTrump, leadSuit);
+        if (pwr > maxTablePower) maxTablePower = pwr;
+        if (tc.card.suit === currentTrump) hasTrumpOnTable = true;
+      }
 
       const winningCards = currentHand.filter(
-        (c) => getCardPower(c, currentTrump, leadSuit) > opPower
+        (c) => getCardPower(c, currentTrump, leadSuit) > maxTablePower
       );
       const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
       const winningTrumps = winningCards.filter((c) => c.suit === currentTrump);
@@ -944,7 +1007,7 @@ export default function App() {
           (a, b) =>
             getCardPoints(b, currentTrump) - getCardPoints(a, currentTrump)
         )[0];
-      } else if (!opIsTrump && winningTrumps.length > 0 && opPts >= 2) {
+      } else if (!hasTrumpOnTable && winningTrumps.length > 0 && opPts >= 2) {
         return winningTrumps[0];
       } else {
         return sortedHandByPtsAsc[0];
@@ -962,7 +1025,7 @@ export default function App() {
       myHand,
       tableCards,
       trumpSuit,
-      roundScores[me.id] || 0
+      myTeamScore
     );
     if (!bestCard) return;
 
@@ -973,7 +1036,7 @@ export default function App() {
       !isFirstToPlay &&
       getCardPower(bestCard, trumpSuit, tableCards[0].card.suit) >
         getCardPower(tableCards[0].card, trumpSuit, tableCards[0].card.suit) &&
-      (roundScores[me.id] || 0) +
+      myTeamScore +
         getCardPoints(tableCards[0].card, trumpSuit) +
         getCardPoints(bestCard, trumpSuit) >=
         POINTS_GOAL
@@ -983,9 +1046,9 @@ export default function App() {
     } else if (isFirstToPlay) {
       if (bestCard.suit === trumpSuit)
         explanation =
-          "Saia cortando baixo para forçar o oponente a gastar um trunfo alto à toa ou te dar a mão de graça.";
+          "Saia cortando baixo para forçar os oponentes a gastarem trunfos altos.";
       else if (getCardPoints(bestCard, trumpSuit) === 0)
-        explanation = "Jogue um Limpo para ver a reação do oponente.";
+        explanation = "Jogue um Limpo para ver a reação deles.";
       else
         explanation =
           "Você não tem Limpos. Saia com a carta de menor valor para que o prejuízo seja pequeno.";
@@ -1008,11 +1071,11 @@ export default function App() {
           getCardPower(tableCards[0].card, trumpSuit, leadSuit)
       ) {
         explanation =
-          "Corte! A carta dele vale pontos. Use seu trunfo baixo para roubar.";
+          "Corte! As cartas deles valem pontos. Use seu trunfo baixo para roubar.";
       } else {
         if (getCardPoints(bestCard, trumpSuit) === 0)
           explanation =
-            "Não vale a pena gastar carta boa. Jogue um Limpo para não dar pontos a ele.";
+            "Não vale a pena gastar carta boa. Jogue um Limpo para não dar pontos a eles.";
         else
           explanation =
             "Descarte a sua carta de MENOR valor para diminuir o prejuízo.";
@@ -1036,16 +1099,19 @@ export default function App() {
 
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
-    const bot = playersList.find((p) => p.id !== me?.id);
+    const currentTurnIdx = playersList.findIndex((p) => p.id === turn);
+    const bot = playersList[currentTurnIdx];
 
-    if (bot && turn === bot.id && tableCards.length < playersList.length) {
+    if (bot && bot.id !== me?.id && tableCards.length < playersList.length) {
       const timer = setTimeout(() => {
         const botId = bot.id;
         const currentHands = stateRef.current?.hands || {};
         const botHand = currentHands[botId] || [];
         if (botHand.length === 0) return;
 
-        const botScore = stateRef.current?.roundScores[botId] || 0;
+        const isMyTeamBot = myTeam.some((p) => p.id === botId);
+        const botScore = isMyTeamBot ? myTeamScore : opTeamScore;
+
         const cardToPlay = getBestCardToPlay(
           botId,
           botHand,
@@ -1068,7 +1134,8 @@ export default function App() {
 
           let nextTurn = turn;
           if (newTable.length < playersList.length) {
-            nextTurn = me.id;
+            nextTurn =
+              playersList[(currentTurnIdx + 1) % playersList.length].id;
           } else {
             nextTurn = null;
           }
@@ -1105,6 +1172,10 @@ export default function App() {
 
   const startGameFirstTime = () => {
     if (!me?.isHost) return;
+    const requiredPlayers = gameMode === "2v2" ? 4 : 2;
+    if (playersList.length < requiredPlayers)
+      return setErrorMsg(`Aguardando mais jogadores para ${gameMode}...`);
+
     const pts = {};
     playersList.forEach((p) => (pts[p.id] = 0));
     const randomStartId =
@@ -1175,11 +1246,10 @@ export default function App() {
     const isHeavy = checkIfHeavy(card, tableCards, trumpSuit);
     const newTable = [...tableCards, { playerId: me.id, card, isHeavy }];
 
+    const currentTurnIdx = playersList.findIndex((p) => p.id === turn);
     let nextTurn = turn;
     if (newTable.length < playersList.length) {
-      const myIdx = playersList.findIndex((p) => p.id === me.id);
-      const nextIdx = (myIdx + 1) % playersList.length;
-      nextTurn = playersList[nextIdx].id;
+      nextTurn = playersList[(currentTurnIdx + 1) % playersList.length].id;
     } else {
       nextTurn = null;
     }
@@ -1209,7 +1279,7 @@ export default function App() {
     if (
       me?.isHost &&
       tableCards.length === playersList.length &&
-      playersList.length >= 2
+      playersList.length > 0
     ) {
       const timer = setTimeout(() => {
         resolveRound(tableCards);
@@ -1229,34 +1299,37 @@ export default function App() {
     const currentHistory = stateRef.current?.trickHistory || [];
 
     let validCards = cards;
-    if (cards.length > 2) validCards = cards.slice(-2);
+    if (validCards.length === 0) return;
 
-    const p1 = validCards[0];
-    const p2 = validCards[1];
-    if (!p1 || !p2) {
-      syncState({ tableCards: [] });
-      return;
+    const leadSuit = validCards[0].card.suit;
+    let winnerCard = validCards[0];
+    let maxPower = getCardPower(validCards[0].card, currentT, leadSuit);
+    let pts = getCardPoints(validCards[0].card, currentT);
+
+    for (let i = 1; i < validCards.length; i++) {
+      pts += getCardPoints(validCards[i].card, currentT);
+      let pwr = getCardPower(validCards[i].card, currentT, leadSuit);
+      if (pwr > maxPower) {
+        maxPower = pwr;
+        winnerCard = validCards[i];
+      }
     }
 
-    const leadSuit = p1.card.suit;
-    const p1Power = getCardPower(p1.card, currentT, leadSuit);
-    const p2Power = getCardPower(p2.card, currentT, leadSuit);
-    const winnerId = p1Power > p2Power ? p1.playerId : p2.playerId;
-    const pts =
-      getCardPoints(p1.card, currentT) + getCardPoints(p2.card, currentT);
+    const winnerId = winnerCard.playerId;
+    const isMyTeamWin = myTeam.some((p) => p.id === winnerId);
 
-    if (winnerId === me?.id) playSoundEffect("trick_win");
+    if (isMyTeamWin) playSoundEffect("trick_win");
     else playSoundEffect("trick_lose");
 
     const newScores = { ...currentRS };
     newScores[winnerId] = (newScores[winnerId] || 0) + pts;
     const winnerName =
-      playersList.find((p) => p.id === winnerId)?.name || "Oponente";
+      playersList.find((p) => p.id === winnerId)?.name || "Alguém";
     const trickData = {
       id: Date.now(),
       winnerId: winnerId,
       pts: pts,
-      cards: [p1.card, p2.card],
+      cards: validCards.map((c) => c.card),
     };
 
     syncState({
@@ -1266,25 +1339,34 @@ export default function App() {
       sweepingTo: winnerId,
     });
 
-    if (newScores[winnerId] >= POINTS_GOAL) {
+    const updatedTeamAScore = myTeam.reduce(
+      (acc, p) => acc + (newScores[p?.id] || 0),
+      0
+    );
+    const updatedTeamBScore = opTeam.reduce(
+      (acc, p) => acc + (newScores[p?.id] || 0),
+      0
+    );
+
+    if (updatedTeamAScore >= POINTS_GOAL || updatedTeamBScore >= POINTS_GOAL) {
+      const winningTeam = updatedTeamAScore >= POINTS_GOAL ? myTeam : opTeam;
       setTimeout(() => {
         syncState({ tableCards: [], sweepingTo: null });
-        handleGameEnd(winnerId);
+        handleGameEnd(winningTeam);
       }, 800);
     } else {
       setTimeout(() => {
         const freshDeck = [...(stateRef.current?.deck || [])];
         const freshHands = { ...(stateRef.current?.hands || {}) };
 
-        if (freshDeck.length >= 2) {
-          const c1 = freshDeck.shift();
-          const c2 = freshDeck.shift();
-          const loserId = p1.playerId === winnerId ? p2.playerId : p1.playerId;
-          if (freshHands[winnerId])
-            freshHands[winnerId] = [...(freshHands[winnerId] || []), c1];
-          if (freshHands[loserId])
-            freshHands[loserId] = [...(freshHands[loserId] || []), c2];
-        }
+        validCards.forEach((tc) => {
+          if (freshDeck.length > 0) {
+            const c = freshDeck.shift();
+            if (freshHands[tc.playerId])
+              freshHands[tc.playerId] = [...(freshHands[tc.playerId] || []), c];
+          }
+        });
+
         syncState({
           hands: freshHands,
           deck: freshDeck,
@@ -1298,42 +1380,65 @@ export default function App() {
     }
   };
 
-  const handleGameEnd = (winnerId) => {
+  // ATUALIZADO: ROTAÇÃO DO TOCO COM REGRAS DE FUGA E DERROTA
+  const handleGameEnd = (winningTeam) => {
     const {
       tocoTarget: currentTarget,
       lives: currentLives,
       gamePoints: currentGP,
     } = stateRef.current;
-    const loserId = playersList.find((p) => p.id !== winnerId)?.id;
+
+    const currentTargetIdx = playersList.findIndex(
+      (p) => p.id === currentTarget
+    );
+    const targetIsInWinningTeam = winningTeam.some(
+      (p) => p.id === currentTarget
+    );
+
     let resultType = "";
     let updates = {};
 
-    if (winnerId === me?.id) playSoundEffect("win");
+    const isMyTeamWinner = winningTeam === myTeam;
+    if (isMyTeamWinner) playSoundEffect("win");
     else {
       playSoundEffect("lose");
       if (settings.vibration && navigator.vibrate)
         navigator.vibrate([100, 50, 100]);
     }
 
-    if (winnerId === currentTarget) {
+    if (targetIsInWinningTeam) {
+      // SE LIVROU! Passa a bomba para o próximo da roda (+1 índice)
+      let nextOpIdx = (currentTargetIdx + 1) % playersList.length;
       resultType = "escaped";
-      updates = { tocoTarget: loserId, lives: 3 };
+      updates = { tocoTarget: playersList[nextOpIdx].id, lives: 3 };
     } else {
+      // PERDEU UMA MÃO (OU TODAS)
       const newLives = currentLives - 1;
       updates = { lives: newLives };
-      if (newLives > 0) resultType = "life_lost";
-      else {
+
+      if (newLives > 0) {
+        resultType = "life_lost";
+      } else {
+        // TOCO CONFIRMADO!
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
-        gPoints[loserId] = (gPoints[loserId] || 0) + 1;
-        updates = { gamePoints: gPoints, lives: 3 };
+
+        // Todo o time perdedor ganha um toco
+        const loserTeam = winningTeam === myTeam ? opTeam : myTeam;
+        loserTeam.forEach((p) => (gPoints[p.id] = (gPoints[p.id] || 0) + 1));
+
+        // O Alvo passa para o PARCEIRO (+2 índices na roda)
+        let partnerIdx = (currentTargetIdx + 2) % playersList.length;
+
+        updates = {
+          gamePoints: gPoints,
+          lives: 3,
+          tocoTarget: playersList[partnerIdx].id,
+        };
       }
     }
-    updates.roundResult = {
-      type: resultType,
-      winnerId: winnerId,
-      loserId: loserId,
-    };
+
+    updates.roundResult = { type: resultType, isMyTeamWinner };
     updates.gameState = "round_end";
     updates.trickFeedback = null;
     syncState(updates);
@@ -1341,52 +1446,49 @@ export default function App() {
 
   const getEndGameMessage = () => {
     if (!roundResult) return null;
-    const iAmWinner = me?.id === roundResult.winnerId;
-    const iAmLoser = me?.id === roundResult.loserId;
-    if (roundResult.type === "escaped") {
-      if (iAmWinner)
+    const { type, isMyTeamWinner } = roundResult;
+
+    if (type === "escaped") {
+      if (isMyTeamWinner)
         return (
           <span className="text-green-400 drop-shadow-md">
-            UFA! ME LIVREI! 😅
+            SEU TIME SE LIVROU! 😅
           </span>
         );
-      if (iAmLoser)
+      else
         return (
           <span className="text-yellow-400 drop-shadow-md">
-            ELE SE LIVROU! O TOCO AGORA É SEU! 🫵
+            ELES ESCAPARAM! O TOCO É DE VOCÊS! 🫵
           </span>
         );
-      return <span>O ALVO ESCAPOU!</span>;
     }
-    if (roundResult.type === "life_lost") {
-      if (iAmLoser)
+    if (type === "life_lost") {
+      if (!isMyTeamWinner)
         return (
           <span className="text-red-400 drop-shadow-md">
-            PERDI UMA VIDA! 💔
+            SEU TIME PERDEU 1 VIDA! 💔
           </span>
         );
-      if (iAmWinner)
+      else
         return (
           <span className="text-green-400 drop-shadow-md">
-            VOCÊ TIROU UMA VIDA DELE! ⚔️
+            VOCÊS TIRARAM UMA VIDA DELES! ⚔️
           </span>
         );
-      return <span>ALVO PERDEU VIDA!</span>;
     }
-    if (roundResult.type === "toco_confirmed") {
-      if (iAmLoser)
+    if (type === "toco_confirmed") {
+      if (!isMyTeamWinner)
         return (
           <span className="text-red-600 drop-shadow-md">
-            QUE PENA! PEGUEI O TOCO. 🪵
+            QUE PENA! SEU TIME PEGOU O TOCO. 🪵
           </span>
         );
-      if (iAmWinner)
+      else
         return (
           <span className="text-yellow-400 drop-shadow-md">
-            AÊ! VOCÊ DEU UM TOCO NELE! 🏆
+            AÊ! VOCÊS DERAM UM TOCO NELES! 🏆
           </span>
         );
-      return <span>TOCO CONFIRMADO!</span>;
     }
     return null;
   };
@@ -1568,7 +1670,6 @@ export default function App() {
             />
           </label>
 
-          {/* NOVO: OPÇÃO DE MESA */}
           <div className="text-white font-medium pt-3 border-t border-white/10 mt-2">
             <span className="mb-2 block">🎨 Estilo da Mesa</span>
             <select
@@ -1701,6 +1802,29 @@ export default function App() {
               </p>
             )}
 
+            <div className="flex gap-4 mb-6 w-full">
+              <button
+                onClick={() => setSelectedMode("1v1")}
+                className={`flex-1 py-3 rounded-xl font-black uppercase text-sm tracking-wider transition-all shadow-md ${
+                  selectedMode === "1v1"
+                    ? "bg-yellow-500 text-black border-2 border-white"
+                    : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                }`}
+              >
+                1 VS 1
+              </button>
+              <button
+                onClick={() => setSelectedMode("2v2")}
+                className={`flex-1 py-3 rounded-xl font-black uppercase text-sm tracking-wider transition-all shadow-md ${
+                  selectedMode === "2v2"
+                    ? "bg-yellow-500 text-black border-2 border-white"
+                    : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                }`}
+              >
+                2 VS 2
+              </button>
+            </div>
+
             <button
               onClick={startSinglePlayer}
               className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
@@ -1757,6 +1881,7 @@ export default function App() {
 
   // --- TELA DE AGUARDANDO JOGADOR ---
   if (gameState === "lobby" && !isSinglePlayer) {
+    const requiredPlayers = gameMode === "2v2" ? 4 : 2;
     return (
       <div
         className={`min-h-screen ${getTableBg(
@@ -1809,9 +1934,12 @@ export default function App() {
             ♣
           </span>
         </h1>
-        <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-8 drop-shadow-md">
-          Desenvolvido por Ryan Kilberth
-        </p>
+
+        <div className="bg-black/60 border border-white/20 px-6 py-2 rounded-full mb-8 shadow-inner">
+          <span className="text-yellow-400 font-black tracking-widest uppercase">
+            Modo {gameMode}
+          </span>
+        </div>
 
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible mb-8">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
@@ -1821,7 +1949,7 @@ export default function App() {
             </span>
           </div>
           <p className="mt-6 mb-4 text-gray-300 font-bold uppercase tracking-wider text-sm">
-            Jogadores na Mesa
+            Jogadores na Mesa ({playersList.length}/{requiredPlayers})
           </p>
           <div className="flex flex-wrap justify-center gap-3 mb-8">
             {playersList.map((p) => (
@@ -1835,7 +1963,12 @@ export default function App() {
               </div>
             ))}
           </div>
-          {me?.isHost && playersList.length >= 2 ? (
+          {errorMsg && (
+            <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
+              {errorMsg}
+            </p>
+          )}
+          {me?.isHost && playersList.length >= requiredPlayers ? (
             <button
               onClick={startGameFirstTime}
               className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-4 rounded-xl hover:from-yellow-400 hover:to-yellow-500 shadow-[0_10px_20px_rgba(234,179,8,0.3)] transition-all transform hover:scale-105 active:scale-95 uppercase tracking-widest text-lg"
@@ -1844,8 +1977,8 @@ export default function App() {
             </button>
           ) : (
             <div className="animate-pulse text-yellow-200 text-sm font-medium bg-yellow-900/30 py-3 rounded-xl border border-yellow-500/20">
-              {playersList.length < 2
-                ? "Aguardando jogador 2..."
+              {playersList.length < requiredPlayers
+                ? "Aguardando mais jogadores..."
                 : "O Host iniciará a partida..."}
             </div>
           )}
@@ -1858,7 +1991,9 @@ export default function App() {
   const opponent = playersList.find((p) => p.id !== me?.id);
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
-  const myTricks = trickHistory.filter((t) => t.winnerId === me?.id);
+  const myTricks = trickHistory.filter((t) =>
+    myTeam.some((p) => p.id === t.winnerId)
+  );
 
   // --- TELA DA MESA DE JOGO ---
   return (
@@ -1932,7 +2067,6 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
-      {/* RENDERIZADOR DA REAÇÃO ATIVA (EMOJI GIGANTE) */}
       {activeReaction && (
         <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
           <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
@@ -1941,23 +2075,16 @@ export default function App() {
         </div>
       )}
 
-      {/* RENDERIZADOR DO BALÃO DE CHAT (Jogador Esquerda) */}
-      {activeChatMessage &&
-        activeChatMessage.senderId === playersList[0]?.id && (
-          <div className="pointer-events-none absolute top-[90px] left-4 z-[140] bg-white text-blue-900 font-black text-sm px-5 py-2 rounded-2xl rounded-tl-none shadow-xl border-2 border-gray-200 animate-chat max-w-[200px]">
-            {activeChatMessage.text}
-          </div>
-        )}
+      {activeChatMessage && (
+        <div className="pointer-events-none absolute top-[90px] left-1/2 -translate-x-1/2 z-[140] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-gray-200 animate-chat whitespace-nowrap">
+          <span className="text-gray-500 mr-2 text-xs">
+            {playersList.find((p) => p.id === activeChatMessage.senderId)?.name}
+            :
+          </span>
+          {activeChatMessage.text}
+        </div>
+      )}
 
-      {/* RENDERIZADOR DO BALÃO DE CHAT (Jogador Direita) */}
-      {activeChatMessage &&
-        activeChatMessage.senderId === playersList[1]?.id && (
-          <div className="pointer-events-none absolute top-[90px] right-4 z-[140] bg-white text-blue-900 font-black text-sm px-5 py-2 rounded-2xl rounded-tr-none shadow-xl border-2 border-gray-200 animate-chat max-w-[200px] text-right">
-            {activeChatMessage.text}
-          </div>
-        )}
-
-      {/* BOTÃO DE CONFIGURAÇÕES NA MESA */}
       <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
         <button
           onClick={() => setShowSettings(true)}
@@ -1978,36 +2105,28 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
-      <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
-        {/* JOGADOR 1 (ESQUERDA) */}
-        <div
-          className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
-            turn === playersList[0]?.id ? "bg-white/5" : ""
-          }`}
-        >
-          <div className="flex justify-between items-center w-full gap-2">
-            <div className="flex items-center gap-2">
-              <PlayerAvatar
-                src={playersList[0]?.avatar}
-                name={playersList[0]?.name}
-              />
-              <span className="font-bold text-base md:text-xl drop-shadow truncate">
-                {playersList[0]?.id === "bot_1"
-                  ? "Computador"
-                  : playersList[0]?.name}
-              </span>
+      <div className="grid grid-cols-[1fr_auto_1fr] w-full bg-black/40 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20 py-2">
+        <div className={`flex flex-col justify-center px-4 overflow-hidden`}>
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-3">
+              {myTeam.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`z-[${10 - i}] ${
+                    turn === p.id ? "ring-2 ring-yellow-400 rounded-full" : ""
+                  }`}
+                >
+                  <PlayerAvatar src={p.avatar} name={p.name} />
+                </div>
+              ))}
             </div>
-            {tocoTarget === playersList[0]?.id && (
-              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
-                {[...Array(lives)].map((_, i) => (
-                  <span key={i}>❤️</span>
-                ))}
-              </div>
-            )}
+            <span className="font-black text-lg md:text-xl drop-shadow truncate text-yellow-400">
+              NÓS
+            </span>
           </div>
-          <div className="flex items-end justify-between mt-1 pl-12">
-            <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
-              {roundScores[playersList[0]?.id] || 0}
+          <div className="flex items-end justify-between mt-2 pl-2">
+            <span className="text-white font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
+              {myTeamScore}
               <span className="text-xs md:text-sm text-gray-400 font-sans">
                 /31
               </span>
@@ -2015,55 +2134,57 @@ export default function App() {
             <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
               Tocos:{" "}
               <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
-                {gamePoints[playersList[0]?.id] || 0}
+                {myTeamTocos}
               </span>
             </span>
           </div>
+          {myTeam.some((p) => p.id === tocoTarget) && (
+            <div className="flex flex-shrink-0 text-sm mt-1 drop-shadow">
+              {[...Array(lives)].map((_, i) => (
+                <span key={i}>❤️</span>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="w-14 md:w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
+        <div className="w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
           </span>
           {!isSinglePlayer && (
             <span
-              className="text-[9px] md:text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
+              className="text-[9px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
               title="PIN da Sala"
             >
               {roomId}
             </span>
           )}
+          <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">
+            {gameMode}
+          </span>
         </div>
 
-        {/* JOGADOR 2 (DIREITA) */}
-        <div
-          className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
-            turn === playersList[1]?.id ? "bg-white/5" : ""
-          }`}
-        >
-          <div className="flex justify-between items-center flex-row-reverse w-full gap-2">
-            <div className="flex items-center flex-row-reverse gap-2">
-              <PlayerAvatar
-                src={playersList[1]?.avatar}
-                name={playersList[1]?.name}
-              />
-              <span className="font-bold text-base md:text-xl drop-shadow truncate text-right">
-                {playersList[1]?.id === "bot_1"
-                  ? "Computador"
-                  : playersList[1]?.name}
-              </span>
+        <div className={`flex flex-col justify-center px-4 overflow-hidden`}>
+          <div className="flex items-center flex-row-reverse gap-2">
+            <div className="flex -space-x-3 flex-row-reverse space-x-reverse">
+              {opTeam.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`z-[${10 - i}] ${
+                    turn === p.id ? "ring-2 ring-red-400 rounded-full" : ""
+                  }`}
+                >
+                  <PlayerAvatar src={p.avatar} name={p.name} />
+                </div>
+              ))}
             </div>
-            {tocoTarget === playersList[1]?.id && (
-              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
-                {[...Array(lives)].map((_, i) => (
-                  <span key={i}>❤️</span>
-                ))}
-              </div>
-            )}
+            <span className="font-black text-lg md:text-xl drop-shadow truncate text-right text-red-400">
+              ELES
+            </span>
           </div>
-          <div className="flex items-end justify-between mt-1 pr-12 flex-row-reverse">
-            <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
-              {roundScores[playersList[1]?.id] || 0}
+          <div className="flex items-end justify-between mt-2 pr-2 flex-row-reverse">
+            <span className="text-white font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
+              {opTeamScore}
               <span className="text-xs md:text-sm text-gray-400 font-sans">
                 /31
               </span>
@@ -2071,10 +2192,17 @@ export default function App() {
             <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
               Tocos:{" "}
               <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
-                {gamePoints[playersList[1]?.id] || 0}
+                {opTeamTocos}
               </span>
             </span>
           </div>
+          {opTeam.some((p) => p.id === tocoTarget) && (
+            <div className="flex flex-shrink-0 text-sm mt-1 drop-shadow justify-end">
+              {[...Array(lives)].map((_, i) => (
+                <span key={i}>❤️</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2095,12 +2223,13 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col items-center justify-center relative w-full">
-        <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2">
+        <div className="absolute top-4 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2 opacity-50">
           {showCards &&
-            Array.from({ length: opHandCount }).map((_, i) => (
+            Array.from({ length: 4 }).map((_, i) => (
               <CardBack key={i} settings={settings} />
             ))}
         </div>
+
         <div className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4">
           {deck.length > 0 && (
             <div
@@ -2126,7 +2255,7 @@ export default function App() {
         </div>
 
         <div className="relative flex flex-col items-center justify-center w-full translate-y-6 md:translate-y-12">
-          <div className="flex gap-6 md:gap-12 items-center h-40 md:h-48 z-10">
+          <div className="flex gap-4 md:gap-8 items-center h-40 md:h-48 z-10 flex-wrap justify-center px-4">
             {tableCards.map((tc) => {
               const sweepingTo = roomData?.sweepingTo;
               const isLeft = sweepingTo === playersList[0]?.id;
@@ -2157,10 +2286,8 @@ export default function App() {
                     trumpSuit={trumpSuit}
                   />
                   <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                    {playersList.find((p) => p.id === tc.playerId)?.id ===
-                    "bot_1"
-                      ? "Computador"
-                      : playersList.find((p) => p.id === tc.playerId)?.name}
+                    {playersList.find((p) => p.id === tc.playerId)?.name ||
+                      "Robô"}
                   </span>
                 </div>
               );
@@ -2173,9 +2300,7 @@ export default function App() {
                 VENCEU A MÃO
               </p>
               <p className="text-2xl md:text-3xl font-black text-blue-900 mb-2">
-                {trickFeedback.winnerName === "Computador"
-                  ? "🤖 Computador"
-                  : trickFeedback.winnerName}
+                {trickFeedback.winnerName}
               </p>
               <span className="inline-block bg-green-100 text-green-700 font-extrabold px-3 py-1 rounded-full text-base md:text-lg border border-green-300">
                 +{trickFeedback.pts} pts
@@ -2200,7 +2325,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* BOTÕES DE CHAT E EMOJIS */}
             {!isSinglePlayer && (
               <div className="absolute right-4 bottom-48 md:bottom-20 z-40 flex flex-col items-end gap-2">
                 {showEmotes && (
@@ -2385,7 +2509,7 @@ export default function App() {
         <div className="absolute inset-0 bg-black/95 z-[60] flex flex-col items-center p-6 overflow-y-auto backdrop-blur-md">
           <div className="w-full max-w-md flex justify-between items-center mb-6 mt-4 z-10">
             <h2 className="text-3xl font-black text-yellow-400 drop-shadow">
-              Suas Mãos 🗂️
+              Mãos do Time 🗂️
             </h2>
             <button
               onClick={() => setShowHistory(false)}
@@ -2398,7 +2522,7 @@ export default function App() {
             {myTricks.length === 0 ? (
               <div className="bg-white/5 border border-white/10 p-8 rounded-2xl text-center shadow-inner">
                 <p className="text-gray-400 font-medium">
-                  Você ainda não levou nenhuma mão nesta rodada.
+                  Seu time ainda não levou nenhuma mão.
                 </p>
               </div>
             ) : (
