@@ -397,7 +397,7 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
-// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2) - AGORA COM LEQUE!
+// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2)
 const EdgePlayer = ({
   player,
   handCount,
@@ -416,9 +416,9 @@ const EdgePlayer = ({
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
-  // Posicionamento ajustado para não encavalar
+  // POSIÇÕES CORRIGIDAS - Nuvem, Esquerda e Direita mais harmoniosos
   if (position === "top") {
-    containerClass += "top-[12%] left-1/2 -translate-x-1/2";
+    containerClass += "top-4 md:top-6 left-1/2 -translate-x-1/2";
   } else if (position === "left") {
     containerClass +=
       "left-2 md:left-6 top-[60%] -translate-y-1/2 flex-row gap-4";
@@ -433,7 +433,6 @@ const EdgePlayer = ({
 
   return (
     <div className={containerClass}>
-      {/* Avatar e Info */}
       <div className={`flex ${flexDir} gap-1 text-center`}>
         <PlayerAvatar
           src={player.avatar}
@@ -460,7 +459,6 @@ const EdgePlayer = ({
         </div>
       </div>
 
-      {/* Mão de Cartas em formato de Leque Curvo */}
       {handCount > 0 && (
         <div
           className={`relative flex ${
@@ -470,9 +468,8 @@ const EdgePlayer = ({
           }`}
         >
           {Array.from({ length: handCount }).map((_, i) => {
-            // Matemática do Leque: Rotaciona e translada dependendo da posição da carta
             const offset = i - (handCount - 1) / 2;
-            const angle = offset * 12; // Abertura do leque (12 graus)
+            const angle = offset * 12;
             let transformStyle = "";
 
             if (position === "top") {
@@ -2117,7 +2114,7 @@ export default function App() {
   }
 
   const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p.id !== me?.id); // Usado apenas no 1v1
+  const opponent = playersList.find((p) => p.id !== me?.id);
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
 
@@ -2197,9 +2194,8 @@ export default function App() {
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
       `}</style>
 
-      {/* PLACAR SUPERIOR */}
+      {/* PLACAR UNIFICADO */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-20">
-        {/* LADO ESQUERDO (Eu no 1v1 ou NÓS no 2v2) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
             !is2v2 && turn === playersList[0]?.id ? "bg-white/5" : ""
@@ -2244,7 +2240,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Vidas do Lado Esquerdo */}
             {(!is2v2 && tocoTarget === playersList[0]?.id) ||
             (is2v2 && myTeam.some((p) => p.id === tocoTarget)) ? (
               <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
@@ -2270,7 +2265,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* CENTRO VS */}
         <div className="w-14 md:w-16 flex flex-col items-center justify-center bg-black/60 border-x border-white/10 shadow-inner px-1">
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
@@ -2290,7 +2284,6 @@ export default function App() {
           )}
         </div>
 
-        {/* LADO DIREITO (Adversário no 1v1 ou ELES no 2v2) */}
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-l border-white/10 overflow-hidden ${
             !is2v2 && turn === playersList[1]?.id ? "bg-white/5" : ""
@@ -2337,7 +2330,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Vidas do Lado Direito */}
             {(!is2v2 && tocoTarget === playersList[1]?.id) ||
             (is2v2 && opTeam.some((p) => p.id === tocoTarget)) ? (
               <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow justify-end">
@@ -2382,7 +2374,6 @@ export default function App() {
         </div>
       )}
 
-      {/* BOTÕES DE CIMA DIREITA */}
       <div className="absolute top-28 right-2 md:right-4 flex flex-col gap-3 z-50">
         <button
           onClick={() => setShowSettings(true)}
@@ -2403,7 +2394,7 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
-      {/* BALÃO DE DICAS: Mais para baixo e In-clicável para não atrapalhar */}
+      {/* BALÃO DE DICAS (In-clicável e posicionado bem acima da mão do jogador) */}
       {currentHint && (
         <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
@@ -2421,7 +2412,7 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col items-center justify-center relative w-full mt-4">
-        {/* RENDERIZAÇÃO 1v1 (CARTAS DO OPONENTE NO TOPO E BARALHO NA ESQUERDA) */}
+        {/* RENDERIZAÇÃO 1v1 */}
         {!is2v2 && showCards && (
           <div className="absolute top-8 md:top-12 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2 z-10">
             {Array.from({ length: opHandCount }).map((_, i) => (
@@ -2430,7 +2421,7 @@ export default function App() {
           </div>
         )}
 
-        {/* RENDERIZAÇÃO DOS OPONENTES E PARCEIRO NA BORDA DA TELA (SOMENTE 2v2 COM LEQUE) */}
+        {/* RENDERIZAÇÃO DOS OPONENTES E PARCEIRO NA BORDA DA TELA (2v2) */}
         {is2v2 && showCards && topPlayer && (
           <EdgePlayer
             player={topPlayer}
@@ -2474,7 +2465,7 @@ export default function App() {
         <div
           className={`absolute ${
             is2v2
-              ? "left-4 md:left-12 top-[25%] md:top-[30%]"
+              ? "left-4 md:left-12 top-[15%] md:top-[20%]"
               : "left-4 md:left-8 top-1/2 -translate-y-1/2"
           } flex flex-col items-center gap-4 opacity-80 hover:opacity-100 transition-all`}
         >
@@ -2513,11 +2504,11 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM CARTAS JOGADAS (ORGANIZADAS EM PARES) */}
+        {/* ÁREA DA MESA COM CARTAS JOGADAS */}
         <div
           className={`relative flex flex-col items-center justify-center w-full ${
             is2v2
-              ? "translate-y-2 md:translate-y-6"
+              ? "translate-y-12 md:translate-y-16"
               : "translate-y-6 md:translate-y-12"
           }`}
         >
@@ -2587,15 +2578,14 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA NO 2V2 */}
+            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA */}
             <div
               className={`absolute left-4 ${
                 is2v2
-                  ? "bottom-32 md:bottom-12 gap-6"
+                  ? "bottom-44 md:bottom-32 gap-6"
                   : "bottom-48 md:bottom-20 gap-2"
               } z-40 flex flex-col items-center`}
             >
-              {/* Botão Mãos */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2606,7 +2596,6 @@ export default function App() {
                 </span>
               </button>
 
-              {/* Avatar do Jogador (Só aparece na mesa no modo 2v2) */}
               {is2v2 && (
                 <div className="flex flex-col items-center gap-1">
                   <PlayerAvatar
