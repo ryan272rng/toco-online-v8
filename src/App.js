@@ -12,6 +12,20 @@ import {
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
+
+// MOTOR DE ÁUDIO GLOBAL (Para não bugar o navegador criando vários)
+let globalAudioCtx = null;
+const initAudio = () => {
+  if (!globalAudioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) globalAudioCtx = new AudioContext();
+  }
+  if (globalAudioCtx && globalAudioCtx.state === "suspended") {
+    globalAudioCtx.resume();
+  }
+  return globalAudioCtx;
+};
+
 const CardFanIcon = () => (
   <svg
     width="34"
@@ -430,7 +444,6 @@ const EdgePlayer = ({
     infoAlign = "text-right";
   }
 
-  // EFEITO ESPECTRO MAGICO (DESTAQUE DA MÃO)
   let fanGlow = "";
   if (isTurn) {
     if (isOpponent) {
@@ -545,6 +558,7 @@ export default function App() {
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem("tocoSettings");
@@ -610,13 +624,22 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const forceUpdateGame = () => {
-    if ("caches" in window) {
-      caches.keys().then((names) => {
-        names.forEach((name) => caches.delete(name));
-      });
+  // SISTEMA DE ATUALIZAÇÃO REFORMULADO E SEGURO
+  const forceUpdateGame = async () => {
+    setIsUpdating(true);
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (let registration of registrations) {
+        await registration.unregister();
+      }
     }
-    window.location.reload(true);
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+    setTimeout(() => {
+      window.location.href = window.location.href.split("#")[0];
+    }, 1500);
   };
 
   const handleImageUpload = (e) => {
@@ -657,9 +680,8 @@ export default function App() {
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
+      const ctx = initAudio();
+      if (!ctx) return;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -757,7 +779,6 @@ export default function App() {
     setShowRules(false);
   };
 
-  // MUDANÇA: Organização de Cadeiras (Slots) no Lobby
   const createRoom = async () => {
     if (isNetworkOffline)
       return setErrorMsg("Conecte-se à internet para jogar online.");
@@ -831,14 +852,13 @@ export default function App() {
       } else if (existingPlayers.length >= maxPlayers) {
         return setErrorMsg("A sala já está cheia!");
       } else {
-        // Encontra o primeiro Slot Vazio
         const occupiedSlots = existingPlayers.map((p) =>
           p.slot !== undefined ? p.slot : -1
         );
         let freeSlot = Array.from({ length: maxPlayers }, (_, i) => i).find(
           (s) => !occupiedSlots.includes(s)
         );
-        if (freeSlot === undefined) freeSlot = existingPlayers.length; // Fallback de segurança
+        if (freeSlot === undefined) freeSlot = existingPlayers.length;
 
         myId = `player_${Date.now()}`;
         newMe = {
@@ -979,7 +999,6 @@ export default function App() {
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
 
-  // ATENÇÃO: Agora a lista de jogadores obedece fielmente os Slots das Cadeiras
   const playersList = roomData?.players
     ? Object.values(roomData.players).sort(
         (a, b) => (a.slot || 0) - (b.slot || 0)
@@ -1007,7 +1026,6 @@ export default function App() {
       : 0;
   const is2v2 = gameMode === "2v2";
 
-  // A Lógica do Modulo %4 funciona perfeitamente pois as cadeiras 0 e 2 são a Dupla 1, e as cadeiras 1 e 3 são a Dupla 2
   const myTeam = is2v2
     ? [playersList[myIdx], playersList[(myIdx + 2) % 4]].filter(Boolean)
     : [playersList[myIdx]];
@@ -1553,6 +1571,7 @@ export default function App() {
     }
   };
 
+  // REGRAS DO TOCO CORRIGIDAS
   const handleGameEnd = (winningTeam) => {
     const {
       tocoTarget: currentTarget,
@@ -1592,11 +1611,10 @@ export default function App() {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
 
-        const loserTeam = winningTeam === myTeam ? opTeam : myTeam;
-        loserTeam.forEach((p) => (gPoints[p.id] = (gPoints[p.id] || 0) + 1));
+        // CORREÇÃO: O Toco vai apenas para quem estava com a bomba (tocoTarget)
+        gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
 
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
-
         updates = {
           gamePoints: gPoints,
           lives: 3,
@@ -1810,7 +1828,7 @@ export default function App() {
             onClick={forceUpdateGame}
             className="w-full bg-blue-600/90 text-white font-bold py-2 rounded-xl hover:bg-blue-500 transition-colors flex items-center justify-center gap-2"
           >
-            <span>🔄</span> Forçar Atualização
+            <span>🔄</span> Limpar Memória do Jogo
           </button>
 
           <label className="flex justify-between items-center text-white font-medium">
@@ -1910,6 +1928,21 @@ export default function App() {
     </div>
   );
 
+  // TELA DE ATUALIZANDO
+  if (isUpdating) {
+    return (
+      <div className="fixed inset-0 bg-black/95 z-[999] flex flex-col items-center justify-center text-white font-sans">
+        <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6 shadow-[0_0_15px_rgba(250,204,21,0.5)]"></div>
+        <h2 className="text-2xl font-black animate-pulse text-yellow-400 drop-shadow-md">
+          Atualizando o Jogo...
+        </h2>
+        <p className="text-sm text-gray-400 mt-2 font-medium">
+          Limpando cache e baixando a nova versão.
+        </p>
+      </div>
+    );
+  }
+
   // --- TELA INICIAL ---
   if (!roomId) {
     return (
@@ -1951,9 +1984,16 @@ export default function App() {
               ♣
             </span>
           </h1>
-          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-10 drop-shadow-md text-center">
+          <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-4 drop-shadow-md text-center">
             Desenvolvido por Ryan Kilberth
           </p>
+
+          <button
+            onClick={forceUpdateGame}
+            className="mb-8 text-xs font-bold text-gray-400 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 hover:text-white hover:border-white/30 transition-colors"
+          >
+            🔄 Verificar Atualizações
+          </button>
 
           {isNetworkOffline && (
             <div className="w-full bg-red-600/80 text-white font-bold text-xs py-3 px-4 rounded-xl mb-4 animate-pulse text-center border border-red-400 shadow-lg">
@@ -2142,7 +2182,6 @@ export default function App() {
             Jogadores na Mesa ({playersList.length}/{requiredPlayers})
           </p>
 
-          {/* LOBBY INTERATIVO DE DUPLAS OU 1V1 */}
           {gameMode === "2v2" ? (
             <div className="flex justify-between gap-4 w-full mb-8">
               <div className="flex-1 flex flex-col items-center gap-2 bg-blue-900/30 p-3 rounded-xl border border-blue-500/30">
@@ -2588,7 +2627,7 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM CARTAS JOGADAS - APENAS A MESA TREME */}
+        {/* ÁREA DA MESA COM CARTAS JOGADAS (SOMENTE ESTA DIV PODE TREMER) */}
         <div
           className={`relative flex flex-col items-center justify-center w-full ${
             is2v2
