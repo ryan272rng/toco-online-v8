@@ -412,11 +412,10 @@ const EdgePlayer = ({
   const isTarget = tocoTarget === player.id;
 
   let containerClass =
-    "absolute flex flex-col items-center z-10 transition-all ";
+    "absolute flex flex-col items-center z-10 transition-all duration-300 ";
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
-  // POSIÇÕES CORRIGIDAS - Nuvem, Esquerda e Direita mais harmoniosos
   if (position === "top") {
     containerClass += "top-4 md:top-6 left-1/2 -translate-x-1/2";
   } else if (position === "left") {
@@ -429,6 +428,16 @@ const EdgePlayer = ({
       "right-2 md:right-6 top-[60%] -translate-y-1/2 flex-row-reverse gap-4";
     flexDir = "flex-col items-end";
     infoAlign = "text-right";
+  }
+
+  // EFEITO ESPECTRO MAGICO (DESTAQUE DA MÃO)
+  let fanGlow = "";
+  if (isTurn) {
+    if (isOpponent) {
+      fanGlow = "drop-shadow-[0_0_25px_rgba(239,68,68,1)] scale-110 z-20";
+    } else {
+      fanGlow = "drop-shadow-[0_0_25px_rgba(59,130,246,1)] scale-110 z-20";
+    }
   }
 
   return (
@@ -463,7 +472,7 @@ const EdgePlayer = ({
         <div
           className={`relative flex ${
             position === "top" ? "flex-row -space-x-5" : "flex-col -space-y-8"
-          } items-center justify-center transition-all duration-300 opacity-90 hover:opacity-100 ${
+          } items-center justify-center transition-all duration-500 opacity-90 ${fanGlow} ${
             position === "top" ? "mt-2" : ""
           }`}
         >
@@ -493,7 +502,7 @@ const EdgePlayer = ({
                   transform: transformStyle,
                   transformOrigin: "center center",
                 }}
-                className="transition-all duration-300 drop-shadow-md"
+                className="transition-all duration-300"
               >
                 <CardBack settings={settings} isMini={true} />
               </div>
@@ -748,6 +757,7 @@ export default function App() {
     setShowRules(false);
   };
 
+  // MUDANÇA: Organização de Cadeiras (Slots) no Lobby
   const createRoom = async () => {
     if (isNetworkOffline)
       return setErrorMsg("Conecte-se à internet para jogar online.");
@@ -759,6 +769,7 @@ export default function App() {
       name: playerName,
       isHost: true,
       avatar: avatarBase64,
+      slot: 0,
     };
 
     const initialRoomData = {
@@ -820,12 +831,22 @@ export default function App() {
       } else if (existingPlayers.length >= maxPlayers) {
         return setErrorMsg("A sala já está cheia!");
       } else {
+        // Encontra o primeiro Slot Vazio
+        const occupiedSlots = existingPlayers.map((p) =>
+          p.slot !== undefined ? p.slot : -1
+        );
+        let freeSlot = Array.from({ length: maxPlayers }, (_, i) => i).find(
+          (s) => !occupiedSlots.includes(s)
+        );
+        if (freeSlot === undefined) freeSlot = existingPlayers.length; // Fallback de segurança
+
         myId = `player_${Date.now()}`;
         newMe = {
           id: myId,
           name: playerName,
           isHost: false,
           avatar: avatarBase64,
+          slot: freeSlot,
         };
         await update(ref(database, `rooms/${pinInput}/players`), {
           [myId]: newMe,
@@ -847,6 +868,14 @@ export default function App() {
     }
   };
 
+  const changeSlot = (newSlot) => {
+    if (isNetworkOffline || !me || isSinglePlayer) return;
+    update(ref(database, `rooms/${roomId}/players/${me.id}`), {
+      slot: newSlot,
+    });
+    setMe((prev) => ({ ...prev, slot: newSlot }));
+  };
+
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
@@ -855,6 +884,7 @@ export default function App() {
       name: playerName,
       isHost: true,
       avatar: avatarBase64,
+      slot: 0,
     };
 
     const bots = {};
@@ -864,18 +894,21 @@ export default function App() {
         name: "Robô Esquerda",
         isHost: false,
         avatar: "",
+        slot: 1,
       };
       bots["bot_2"] = {
         id: "bot_2",
         name: "Robô Aliado",
         isHost: false,
         avatar: "",
+        slot: 2,
       };
       bots["bot_3"] = {
         id: "bot_3",
         name: "Robô Direita",
         isHost: false,
         avatar: "",
+        slot: 3,
       };
     } else {
       bots["bot_1"] = {
@@ -883,6 +916,7 @@ export default function App() {
         name: "Computador",
         isHost: false,
         avatar: "",
+        slot: 1,
       };
     }
 
@@ -944,7 +978,14 @@ export default function App() {
   // ============================================================================
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
-  const playersList = roomData?.players ? Object.values(roomData.players) : [];
+
+  // ATENÇÃO: Agora a lista de jogadores obedece fielmente os Slots das Cadeiras
+  const playersList = roomData?.players
+    ? Object.values(roomData.players).sort(
+        (a, b) => (a.slot || 0) - (b.slot || 0)
+      )
+    : [];
+
   const gameState = roomData?.gameState || "lobby";
   const gameMode = roomData?.gameMode || "1v1";
   const tableCards = roomData?.tableCards || [];
@@ -966,6 +1007,7 @@ export default function App() {
       : 0;
   const is2v2 = gameMode === "2v2";
 
+  // A Lógica do Modulo %4 funciona perfeitamente pois as cadeiras 0 e 2 são a Dupla 1, e as cadeiras 1 e 3 são a Dupla 2
   const myTeam = is2v2
     ? [playersList[myIdx], playersList[(myIdx + 2) % 4]].filter(Boolean)
     : [playersList[myIdx]];
@@ -1619,6 +1661,28 @@ export default function App() {
     return null;
   };
 
+  // COMPONENTE CADEIRA DO LOBBY
+  const LobbySlot = ({ slotNum }) => {
+    const p = playersList.find((p) => p.slot === slotNum);
+    if (p) {
+      return (
+        <div className="bg-black/40 px-3 py-2 rounded-lg font-bold shadow border border-white/10 flex items-center gap-2 w-full justify-center">
+          <PlayerAvatar src={p.avatar} name={p.name} size="sm" />
+          {p.isHost && <span title="Host">👑</span>}
+          <span className="truncate max-w-[80px] text-xs">{p.name}</span>
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={() => changeSlot(slotNum)}
+        className="bg-white/5 border border-dashed border-white/20 px-3 py-3 rounded-lg text-[10px] uppercase font-bold text-gray-400 hover:text-white hover:bg-white/10 w-full transition-colors flex justify-center"
+      >
+        Sentar Aqui
+      </button>
+    );
+  };
+
   // ============================================================================
   // 5. COMPONENTES VISUAIS REUTILIZÁVEIS E TELAS
   // ============================================================================
@@ -2077,18 +2141,40 @@ export default function App() {
           <p className="mt-6 mb-4 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Jogadores na Mesa ({playersList.length}/{requiredPlayers})
           </p>
-          <div className="flex flex-wrap justify-center gap-3 mb-8">
-            {playersList.map((p) => (
-              <div
-                key={p.id}
-                className="bg-gradient-to-b from-blue-500 to-blue-700 px-4 py-2 rounded-xl font-bold shadow-lg border-b-4 border-blue-900 notranslate flex items-center gap-2"
-              >
-                <PlayerAvatar src={p.avatar} name={p.name} size="sm" />
-                {p.isHost && <span title="Host">👑</span>}
-                {p.name}
+
+          {/* LOBBY INTERATIVO DE DUPLAS OU 1V1 */}
+          {gameMode === "2v2" ? (
+            <div className="flex justify-between gap-4 w-full mb-8">
+              <div className="flex-1 flex flex-col items-center gap-2 bg-blue-900/30 p-3 rounded-xl border border-blue-500/30">
+                <h3 className="font-black text-yellow-400 text-xs mb-1">
+                  DUPLA 1
+                </h3>
+                <LobbySlot slotNum={0} />
+                <LobbySlot slotNum={2} />
               </div>
-            ))}
-          </div>
+              <div className="flex-1 flex flex-col items-center gap-2 bg-red-900/30 p-3 rounded-xl border border-red-500/30">
+                <h3 className="font-black text-red-400 text-xs mb-1">
+                  DUPLA 2
+                </h3>
+                <LobbySlot slotNum={1} />
+                <LobbySlot slotNum={3} />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-3 mb-8">
+              {playersList.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-gradient-to-b from-blue-500 to-blue-700 px-4 py-2 rounded-xl font-bold shadow-lg border-b-4 border-blue-900 notranslate flex items-center gap-2"
+                >
+                  <PlayerAvatar src={p.avatar} name={p.name} size="sm" />
+                  {p.isHost && <span title="Host">👑</span>}
+                  {p.name}
+                </div>
+              ))}
+            </div>
+          )}
+
           {errorMsg && (
             <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
               {errorMsg}
@@ -2114,7 +2200,7 @@ export default function App() {
   }
 
   const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p.id !== me?.id);
+  const opponent = playersList.find((p) => p.id !== me?.id); // Usado apenas no 1v1
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
 
@@ -2127,9 +2213,7 @@ export default function App() {
     <div
       className={`min-h-screen ${getTableBg(
         settings.tableStyle
-      )} flex flex-col font-sans overflow-hidden notranslate text-white relative ${
-        isShaking ? "animate-shake" : ""
-      }`}
+      )} flex flex-col font-sans overflow-hidden notranslate text-white relative`}
       translate="no"
     >
       <style>{`
@@ -2467,7 +2551,7 @@ export default function App() {
             is2v2
               ? "left-4 md:left-12 top-[15%] md:top-[20%]"
               : "left-4 md:left-8 top-1/2 -translate-y-1/2"
-          } flex flex-col items-center gap-4 opacity-80 hover:opacity-100 transition-all`}
+          } flex flex-col items-center gap-4 opacity-80 hover:opacity-100 transition-all z-0`}
         >
           {deck.length > 0 && (
             <div
@@ -2504,13 +2588,13 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM CARTAS JOGADAS */}
+        {/* ÁREA DA MESA COM CARTAS JOGADAS - APENAS A MESA TREME */}
         <div
           className={`relative flex flex-col items-center justify-center w-full ${
             is2v2
               ? "translate-y-12 md:translate-y-16"
               : "translate-y-6 md:translate-y-12"
-          }`}
+          } ${isShaking ? "animate-shake" : ""}`}
         >
           <div
             className={`${
