@@ -195,13 +195,12 @@ const CHAT_PHRASES = [
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 
-// NOVIDADE: Adicionado scale-110 e z-20 se for o turno da pessoa
 const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
   const dim =
     size === "lg"
       ? "w-24 h-24 text-3xl"
       : size === "sm"
-      ? "w-8 h-8 text-sm"
+      ? "w-10 h-10 text-sm"
       : "w-10 h-10 md:w-12 md:h-12 text-lg";
   const initial = name ? name.charAt(0).toUpperCase() : "?";
 
@@ -211,11 +210,12 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
   if (isTurn !== undefined) {
     ringColor = isTurn
       ? isOpponent
-        ? "ring-4 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]"
-        : "ring-4 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)]"
+        ? "ring-4 ring-red-500 shadow-[0_0_20px_rgba(239,68,68,0.9)]"
+        : "ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.9)]"
       : "border-2 border-white/30 shadow-lg";
 
-    if (isTurn) turnScale = "scale-110 z-20";
+    // Aumentado para 125% quando for a vez do jogador
+    if (isTurn) turnScale = "scale-125 z-20";
   }
 
   if (src) {
@@ -417,28 +417,24 @@ const CardBack = ({ settings, isMini = false }) => {
 };
 
 // COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2)
-// NOVIDADE: Balões de Chat embutidos e ajustados!
 const EdgePlayer = ({
   player,
   handCount,
   position,
   isTurn,
   isOpponent,
-  tocoTarget,
-  lives,
-  settings,
   activeChat,
+  settings,
 }) => {
   if (!player) return null;
-  const isTarget = tocoTarget === player.id;
   const hasChat = activeChat && activeChat.senderId === player.id;
 
+  // Posicionamento perfeitamente centralizado no topo
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
-  // Posicionamentos do Chat Baseado na Posição
   let chatPositionClass = "";
 
   if (position === "top") {
@@ -467,7 +463,7 @@ const EdgePlayer = ({
 
   return (
     <div className={containerClass}>
-      {/* BALÃO DE CHAT (Renderizado grudado no Player) */}
+      {/* BALÃO DE CHAT DESTE JOGADOR */}
       {hasChat && (
         <div
           className={`pointer-events-none absolute z-[140] bg-white text-blue-900 font-black text-xs md:text-sm px-4 py-2 rounded-2xl shadow-xl border border-gray-200 animate-chat whitespace-nowrap ${chatPositionClass}`}
@@ -476,7 +472,7 @@ const EdgePlayer = ({
         </div>
       )}
 
-      <div className={`flex ${flexDir} gap-1 text-center`}>
+      <div className={`flex ${flexDir} items-center gap-1 text-center`}>
         <PlayerAvatar
           src={player.avatar}
           name={player.name}
@@ -492,15 +488,6 @@ const EdgePlayer = ({
           <span className="text-[10px] md:text-xs font-bold block truncate max-w-[70px]">
             {player.name}
           </span>
-          {isTarget && (
-            <div className="flex gap-0.5">
-              {[...Array(lives)].map((_, i) => (
-                <span key={i} className="text-[6px]">
-                  ❤️
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -578,7 +565,7 @@ export default function App() {
   const [activeChatMessage, setActiveChatMessage] = useState(null);
   const [isShaking, setIsShaking] = useState(false);
 
-  const [showTrumpBanner, setShowTrumpBanner] = useState(false); // NOVO: Faixa de anúncio do trunfo
+  const [showTrumpBanner, setShowTrumpBanner] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -649,6 +636,7 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // ATUALIZAÇÃO SEGURA
   const forceUpdateGame = async () => {
     setIsUpdating(true);
     if ("serviceWorker" in navigator) {
@@ -666,6 +654,7 @@ export default function App() {
     }, 1500);
   };
 
+  // IMAGEM EM ALTA QUALIDADE (MAX_SIZE 400px)
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -674,7 +663,7 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_SIZE = 100;
+        const MAX_SIZE = 400; // Dobro da resolução anterior
         let width = img.width;
         let height = img.height;
         if (width > height) {
@@ -692,7 +681,7 @@ export default function App() {
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.9); // Qualidade 90%
         setAvatarBase64(compressedBase64);
         localStorage.setItem("tocoPlayerAvatar", compressedBase64);
       };
@@ -1430,10 +1419,6 @@ export default function App() {
       });
       const remaining = currentDeck.slice(playersList.length * 4);
 
-      // NOVO: Exibe notificação do trunfo
-      setShowTrumpBanner(true);
-      setTimeout(() => setShowTrumpBanner(false), 2500);
-
       syncState({
         hands: newHands,
         deck: remaining,
@@ -1443,18 +1428,14 @@ export default function App() {
     }
   }, [gameState, me?.isHost]);
 
-  // Se eu não sou host, também preciso ver a notificação de trunfo quando muda para playing
+  // NOVO: Gerenciador de Banner do Trunfo baseado no status playing
   useEffect(() => {
-    if (
-      gameState === "playing" &&
-      trumpSuit &&
-      !me?.isHost &&
-      tableCards.length === 0
-    ) {
+    if (gameState === "playing" && trumpSuit && tableCards.length === 0) {
       setShowTrumpBanner(true);
-      setTimeout(() => setShowTrumpBanner(false), 2500);
+      const timer = setTimeout(() => setShowTrumpBanner(false), 3000);
+      return () => clearTimeout(timer);
     }
-  }, [gameState, trumpSuit, me?.isHost]);
+  }, [gameState, trumpSuit]);
 
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
@@ -1630,6 +1611,10 @@ export default function App() {
     let updates = {};
 
     const isMyTeamWinner = winningTeam === myTeam;
+    const winnerRepId = winningTeam[0].id;
+    const loserTeam = winningTeam === myTeam ? opTeam : myTeam;
+    const loserRepId = loserTeam[0].id;
+
     if (isMyTeamWinner) playSoundEffect("win");
     else {
       playSoundEffect("lose");
@@ -1650,7 +1635,10 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
+
+        // CORREÇÃO: O Toco vai apenas para quem estava com a bomba (tocoTarget)
         gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
+
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
         updates = {
           gamePoints: gPoints,
@@ -1660,7 +1648,12 @@ export default function App() {
       }
     }
 
-    updates.roundResult = { type: resultType, isMyTeamWinner };
+    updates.roundResult = {
+      type: resultType,
+      isMyTeamWinner,
+      winnerId: winnerRepId,
+      loserId: loserRepId,
+    };
     updates.gameState = "round_end";
     updates.trickFeedback = null;
     syncState(updates);
@@ -1674,13 +1667,13 @@ export default function App() {
       if (isMyTeamWinner)
         return (
           <span className="text-green-400 drop-shadow-md">
-            {is2v2 ? "SEU TIME" : "VOCÊ"} SE LIVROU! 😅
+            UFA! {is2v2 ? "SEU TIME" : "VOCÊ"} SE LIVROU! 😅
           </span>
         );
       else
         return (
           <span className="text-yellow-400 drop-shadow-md">
-            {is2v2 ? "ELES ESCAPARAM" : "ELE ESCAPOU"}! O TOCO É{" "}
+            {is2v2 ? "ELES ESCAPARAM" : "O ADVERSÁRIO ESCAPOU"}! O TOCO É{" "}
             {is2v2 ? "DE VOCÊS" : "SEU"}! 🫵
           </span>
         );
@@ -1689,13 +1682,13 @@ export default function App() {
       if (!isMyTeamWinner)
         return (
           <span className="text-red-400 drop-shadow-md">
-            {is2v2 ? "SEU TIME" : "VOCÊ"} PERDEU 1 VIDA! 💔
+            ALVO ATINGIDO! {is2v2 ? "SEU TIME" : "VOCÊ"} PERDEU 1 VIDA! 💔
           </span>
         );
       else
         return (
           <span className="text-green-400 drop-shadow-md">
-            VOCÊS TIRARAM UMA VIDA DELES! ⚔️
+            ALVO ATINGIDO! VOCÊS TIRARAM 1 VIDA DELES! ⚔️
           </span>
         );
     }
@@ -1964,7 +1957,6 @@ export default function App() {
     </div>
   );
 
-  // TELA DE ATUALIZANDO
   if (isUpdating) {
     return (
       <div className="fixed inset-0 bg-black/95 z-[999] flex flex-col items-center justify-center text-white font-sans">
@@ -2275,7 +2267,7 @@ export default function App() {
   }
 
   const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p.id !== me?.id);
+  const opponent = playersList.find((p) => p.id !== me?.id); // Usado apenas no 1v1
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
 
@@ -2398,15 +2390,6 @@ export default function App() {
                 </>
               )}
             </div>
-
-            {(!is2v2 && tocoTarget === playersList[0]?.id) ||
-            (is2v2 && myTeam.some((p) => p.id === tocoTarget)) ? (
-              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow">
-                {[...Array(lives)].map((_, i) => (
-                  <span key={i}>❤️</span>
-                ))}
-              </div>
-            ) : null}
           </div>
           <div className="flex items-end justify-between mt-1 pl-12">
             <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
@@ -2488,15 +2471,6 @@ export default function App() {
                 </>
               )}
             </div>
-
-            {(!is2v2 && tocoTarget === playersList[1]?.id) ||
-            (is2v2 && opTeam.some((p) => p.id === tocoTarget)) ? (
-              <div className="flex flex-shrink-0 text-sm md:text-lg drop-shadow justify-end">
-                {[...Array(lives)].map((_, i) => (
-                  <span key={i}>❤️</span>
-                ))}
-              </div>
-            ) : null}
           </div>
           <div className="flex items-end justify-between mt-1 pr-12 flex-row-reverse">
             <span className="text-yellow-400 font-mono text-2xl md:text-3xl font-bold drop-shadow-md">
@@ -2527,12 +2501,13 @@ export default function App() {
       {showTrumpBanner && trumpSuit && (
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] pointer-events-none animate-fade-in w-full text-center">
           <div className="bg-black/80 backdrop-blur-md border-y-4 border-yellow-500 py-6 px-12 shadow-[0_0_50px_rgba(250,204,21,0.5)] transform scale-110">
-            <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-2">
-              O Trunfo é
+            <h2 className="text-lg md:text-xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-1">
+              {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}{" "}
+              escolheu o trunfo:
             </h2>
             <div className="flex items-center justify-center gap-3">
               <span
-                className={`text-4xl md:text-6xl font-sans ${SUITS[trumpSuit].defaultColor} drop-shadow-md`}
+                className={`text-5xl md:text-7xl font-sans ${SUITS[trumpSuit].defaultColor} drop-shadow-md`}
               >
                 {SUITS[trumpSuit].symbol}
               </span>
@@ -2564,23 +2539,6 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
-      {/* BALÃO DE DICAS */}
-      {currentHint && (
-        <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
-          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
-            <button
-              onClick={() => setCurrentHint(null)}
-              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50 cursor-pointer"
-            >
-              X
-            </button>
-            <p className="text-sm md:text-base font-medium text-white leading-tight">
-              {currentHint.text}
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="flex-1 flex flex-col items-center justify-center relative w-full mt-4">
         {/* RENDERIZAÇÃO 1v1 */}
         {!is2v2 && showCards && (
@@ -2602,6 +2560,7 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
+            activeChat={activeChatMessage}
           />
         )}
 
@@ -2615,6 +2574,7 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
+            activeChat={activeChatMessage}
           />
         )}
 
@@ -2628,6 +2588,7 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
+            activeChat={activeChatMessage}
           />
         )}
 
@@ -2664,7 +2625,7 @@ export default function App() {
                   ? "w-10 h-10 md:w-14 md:h-14 border-2 md:border-4"
                   : "w-10 h-10 md:w-14 md:h-14 border-4"
               } bg-white rounded-full border-yellow-500 flex items-center justify-center ${
-                is2v2 ? "text-xl md:text-3xl" : "text-xl md:text-3xl"
+                is2v2 ? "text-2xl md:text-4xl" : "text-xl md:text-3xl"
               } shadow-[0_0_20px_rgba(250,204,21,0.8)] transition-transform hover:scale-110`}
             >
               <span className={`${SUITS[trumpSuit].defaultColor} font-sans`}>
@@ -2691,15 +2652,13 @@ export default function App() {
           >
             {tableCards.map((tc) => {
               const sweepingTo = roomData?.sweepingTo;
-              const isLeft =
-                sweepingTo === playersList[0]?.id ||
-                sweepingTo === leftPlayer?.id;
+              const isMyTeamSweep = myTeam.some((p) => p.id === sweepingTo);
               const isAnimEnabled = settings.animations ?? true;
 
               let animationClass = "";
               if (sweepingTo) {
                 animationClass = isAnimEnabled
-                  ? isLeft
+                  ? isMyTeamSweep
                     ? "animate-sweep-left"
                     : "animate-sweep-right"
                   : "opacity-0";
@@ -2745,9 +2704,27 @@ export default function App() {
         </div>
       </div>
 
+      {/* BALÃO DE DICAS */}
+      {currentHint && (
+        <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
+          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
+            <button
+              onClick={() => setCurrentHint(null)}
+              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50 cursor-pointer"
+            >
+              X
+            </button>
+            <p className="text-sm md:text-base font-medium text-white leading-tight">
+              {currentHint.text}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
+            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA NO 2V2 */}
             <div
               className={`absolute left-4 ${
                 is2v2
@@ -2755,6 +2732,7 @@ export default function App() {
                   : "bottom-48 md:bottom-20 gap-2"
               } z-40 flex flex-col items-center`}
             >
+              {/* Botão Mãos */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2765,6 +2743,7 @@ export default function App() {
                 </span>
               </button>
 
+              {/* Avatar do Jogador (Só aparece na mesa no modo 2v2) */}
               {is2v2 && (
                 <div className="flex flex-col items-center gap-1">
                   <PlayerAvatar
@@ -2774,15 +2753,6 @@ export default function App() {
                     isTurn={turn === me?.id}
                     isOpponent={false}
                   />
-                  {tocoTarget === me?.id && (
-                    <div className="flex gap-0.5 mt-0.5 justify-center">
-                      {[...Array(lives)].map((_, i) => (
-                        <span key={i} className="text-[8px]">
-                          ❤️
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -2818,7 +2788,7 @@ export default function App() {
                   </div>
                 )}
                 {showChat && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm z-50">
+                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm">
                     {CHAT_PHRASES.map((phrase) => (
                       <button
                         key={phrase}
@@ -2837,7 +2807,7 @@ export default function App() {
                       setShowChat(!showChat);
                       setShowEmotes(false);
                     }}
-                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
+                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
                     title="Chat Rápido"
                   >
                     💬
@@ -2847,7 +2817,7 @@ export default function App() {
                       setShowEmotes(!showEmotes);
                       setShowChat(false);
                     }}
-                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
+                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
                     title="Reagir"
                   >
                     😀
@@ -2878,6 +2848,16 @@ export default function App() {
                 </button>
               </div>
             )}
+
+            {/* Balão do seu Chat Local no 1v1 */}
+            {!is2v2 &&
+              activeChatMessage &&
+              activeChatMessage.senderId === me?.id && (
+                <div className="pointer-events-none absolute bottom-44 left-1/2 -translate-x-1/2 z-[140] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-gray-200 animate-chat whitespace-nowrap">
+                  <span className="text-gray-500 mr-2 text-xs">Você:</span>
+                  {activeChatMessage.text}
+                </div>
+              )}
           </>
         )}
 
@@ -2957,10 +2937,12 @@ export default function App() {
                 🃏
               </div>
               <h2 className="text-3xl font-black text-yellow-400 mb-2 drop-shadow">
-                Aguardando Trunfo...
+                Aguardando{" "}
+                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}
+                ...
               </h2>
               <p className="text-gray-300 text-sm font-medium">
-                O Alvo está escolhendo o naipe de corte.
+                O jogador está escolhendo o naipe de corte.
               </p>
             </div>
           )}
@@ -3017,7 +2999,7 @@ export default function App() {
         <div className="absolute inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-gradient-to-br from-gray-900 to-black p-1 rounded-3xl shadow-[0_0_80px_rgba(234,179,8,0.4)] max-w-sm w-full border border-gray-700">
             <div className="bg-gray-900/50 backdrop-blur-md p-10 rounded-[22px] text-center overflow-visible">
-              <div className="text-3xl font-black text-white mb-8 uppercase flex flex-col gap-3 leading-tight tracking-wide drop-shadow-md overflow-visible">
+              <div className="text-2xl md:text-3xl font-black text-white mb-8 uppercase flex flex-col gap-3 leading-tight tracking-wide drop-shadow-md overflow-visible">
                 {getEndGameMessage()}
               </div>
               {me?.isHost ? (
