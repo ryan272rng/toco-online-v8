@@ -13,7 +13,7 @@ import {
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
-// MOTOR DE ÁUDIO GLOBAL (Para não bugar o navegador criando vários)
+// MOTOR DE ÁUDIO GLOBAL
 let globalAudioCtx = null;
 const initAudio = () => {
   if (!globalAudioCtx) {
@@ -195,6 +195,7 @@ const CHAT_PHRASES = [
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 
+// NOVIDADE: Adicionado scale-110 e z-20 se for o turno da pessoa
 const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
   const dim =
     size === "lg"
@@ -205,12 +206,16 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
   const initial = name ? name.charAt(0).toUpperCase() : "?";
 
   let ringColor = "border-2 border-white/30 shadow-lg";
+  let turnScale = "";
+
   if (isTurn !== undefined) {
     ringColor = isTurn
       ? isOpponent
         ? "ring-4 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]"
         : "ring-4 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)]"
       : "border-2 border-white/30 shadow-lg";
+
+    if (isTurn) turnScale = "scale-110 z-20";
   }
 
   if (src) {
@@ -218,13 +223,13 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
       <img
         src={src}
         alt={name}
-        className={`${dim} rounded-full object-cover ${ringColor} transition-all duration-300`}
+        className={`${dim} rounded-full object-cover ${ringColor} ${turnScale} transition-all duration-300`}
       />
     );
   }
   return (
     <div
-      className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 ${ringColor} flex items-center justify-center text-white font-black transition-all duration-300`}
+      className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 ${ringColor} ${turnScale} flex items-center justify-center text-white font-black transition-all duration-300`}
     >
       {name.includes("Robô") || name === "Computador" ? "🤖" : initial}
     </div>
@@ -412,6 +417,7 @@ const CardBack = ({ settings, isMini = false }) => {
 };
 
 // COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2)
+// NOVIDADE: Balões de Chat embutidos e ajustados!
 const EdgePlayer = ({
   player,
   handCount,
@@ -421,40 +427,55 @@ const EdgePlayer = ({
   tocoTarget,
   lives,
   settings,
+  activeChat,
 }) => {
   if (!player) return null;
   const isTarget = tocoTarget === player.id;
+  const hasChat = activeChat && activeChat.senderId === player.id;
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
+  // Posicionamentos do Chat Baseado na Posição
+  let chatPositionClass = "";
+
   if (position === "top") {
-    containerClass += "top-4 md:top-6 left-1/2 -translate-x-1/2";
+    containerClass += "top-4 left-1/2 -translate-x-1/2";
+    chatPositionClass = "top-full mt-2 left-1/2 -translate-x-1/2";
   } else if (position === "left") {
     containerClass +=
       "left-2 md:left-6 top-[60%] -translate-y-1/2 flex-row gap-4";
     flexDir = "flex-col items-start";
     infoAlign = "text-left";
+    chatPositionClass = "left-full ml-4 top-1/2 -translate-y-1/2";
   } else if (position === "right") {
     containerClass +=
       "right-2 md:right-6 top-[60%] -translate-y-1/2 flex-row-reverse gap-4";
     flexDir = "flex-col items-end";
     infoAlign = "text-right";
+    chatPositionClass = "right-full mr-4 top-1/2 -translate-y-1/2";
   }
 
   let fanGlow = "";
   if (isTurn) {
-    if (isOpponent) {
+    if (isOpponent)
       fanGlow = "drop-shadow-[0_0_25px_rgba(239,68,68,1)] scale-110 z-20";
-    } else {
-      fanGlow = "drop-shadow-[0_0_25px_rgba(59,130,246,1)] scale-110 z-20";
-    }
+    else fanGlow = "drop-shadow-[0_0_25px_rgba(59,130,246,1)] scale-110 z-20";
   }
 
   return (
     <div className={containerClass}>
+      {/* BALÃO DE CHAT (Renderizado grudado no Player) */}
+      {hasChat && (
+        <div
+          className={`pointer-events-none absolute z-[140] bg-white text-blue-900 font-black text-xs md:text-sm px-4 py-2 rounded-2xl shadow-xl border border-gray-200 animate-chat whitespace-nowrap ${chatPositionClass}`}
+        >
+          {activeChat.text}
+        </div>
+      )}
+
       <div className={`flex ${flexDir} gap-1 text-center`}>
         <PlayerAvatar
           src={player.avatar}
@@ -464,7 +485,9 @@ const EdgePlayer = ({
           isOpponent={isOpponent}
         />
         <div
-          className={`bg-black/50 backdrop-blur rounded px-2 py-0.5 text-white/90 flex flex-col ${infoAlign} gap-0.5 shadow-md border border-white/10`}
+          className={`bg-black/50 backdrop-blur rounded px-2 py-0.5 text-white/90 flex flex-col ${infoAlign} gap-0.5 shadow-md border border-white/10 ${
+            isTurn ? "scale-110 z-20" : ""
+          } transition-transform`}
         >
           <span className="text-[10px] md:text-xs font-bold block truncate max-w-[70px]">
             {player.name}
@@ -484,9 +507,9 @@ const EdgePlayer = ({
       {handCount > 0 && (
         <div
           className={`relative flex ${
-            position === "top" ? "flex-row -space-x-5" : "flex-col -space-y-8"
+            position === "top" ? "flex-row -space-x-6" : "flex-col -space-y-8"
           } items-center justify-center transition-all duration-500 opacity-90 ${fanGlow} ${
-            position === "top" ? "mt-2" : ""
+            position === "top" ? "mt-1" : ""
           }`}
         >
           {Array.from({ length: handCount }).map((_, i) => {
@@ -554,6 +577,8 @@ export default function App() {
   const [activeReaction, setActiveReaction] = useState(null);
   const [activeChatMessage, setActiveChatMessage] = useState(null);
   const [isShaking, setIsShaking] = useState(false);
+
+  const [showTrumpBanner, setShowTrumpBanner] = useState(false); // NOVO: Faixa de anúncio do trunfo
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -624,7 +649,6 @@ export default function App() {
   const toggleSetting = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // SISTEMA DE ATUALIZAÇÃO REFORMULADO E SEGURO
   const forceUpdateGame = async () => {
     setIsUpdating(true);
     if ("serviceWorker" in navigator) {
@@ -1004,7 +1028,6 @@ export default function App() {
         (a, b) => (a.slot || 0) - (b.slot || 0)
       )
     : [];
-
   const gameState = roomData?.gameState || "lobby";
   const gameMode = roomData?.gameMode || "1v1";
   const tableCards = roomData?.tableCards || [];
@@ -1406,6 +1429,11 @@ export default function App() {
         newHands[p.id] = currentDeck.slice(index * 4, (index + 1) * 4);
       });
       const remaining = currentDeck.slice(playersList.length * 4);
+
+      // NOVO: Exibe notificação do trunfo
+      setShowTrumpBanner(true);
+      setTimeout(() => setShowTrumpBanner(false), 2500);
+
       syncState({
         hands: newHands,
         deck: remaining,
@@ -1414,6 +1442,19 @@ export default function App() {
       });
     }
   }, [gameState, me?.isHost]);
+
+  // Se eu não sou host, também preciso ver a notificação de trunfo quando muda para playing
+  useEffect(() => {
+    if (
+      gameState === "playing" &&
+      trumpSuit &&
+      !me?.isHost &&
+      tableCards.length === 0
+    ) {
+      setShowTrumpBanner(true);
+      setTimeout(() => setShowTrumpBanner(false), 2500);
+    }
+  }, [gameState, trumpSuit, me?.isHost]);
 
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
@@ -1571,7 +1612,6 @@ export default function App() {
     }
   };
 
-  // REGRAS DO TOCO CORRIGIDAS
   const handleGameEnd = (winningTeam) => {
     const {
       tocoTarget: currentTarget,
@@ -1610,10 +1650,7 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
-
-        // CORREÇÃO: O Toco vai apenas para quem estava com a bomba (tocoTarget)
         gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
-
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
         updates = {
           gamePoints: gPoints,
@@ -1679,7 +1716,6 @@ export default function App() {
     return null;
   };
 
-  // COMPONENTE CADEIRA DO LOBBY
   const LobbySlot = ({ slotNum }) => {
     const p = playersList.find((p) => p.slot === slotNum);
     if (p) {
@@ -2239,7 +2275,7 @@ export default function App() {
   }
 
   const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p.id !== me?.id); // Usado apenas no 1v1
+  const opponent = playersList.find((p) => p.id !== me?.id);
   const opHandCount = hands[opponent?.id]?.length || 0;
   const showCards = gameState === "playing" || gameState === "round_end";
 
@@ -2487,13 +2523,24 @@ export default function App() {
         </div>
       )}
 
-      {activeChatMessage && (
-        <div className="pointer-events-none absolute top-[100px] left-1/2 -translate-x-1/2 z-[140] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-gray-200 animate-chat whitespace-nowrap">
-          <span className="text-gray-500 mr-2 text-xs">
-            {playersList.find((p) => p.id === activeChatMessage.senderId)?.name}
-            :
-          </span>
-          {activeChatMessage.text}
+      {/* FAIXA DE ANÚNCIO DE TRUNFO (NOVO) */}
+      {showTrumpBanner && trumpSuit && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] pointer-events-none animate-fade-in w-full text-center">
+          <div className="bg-black/80 backdrop-blur-md border-y-4 border-yellow-500 py-6 px-12 shadow-[0_0_50px_rgba(250,204,21,0.5)] transform scale-110">
+            <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-2">
+              O Trunfo é
+            </h2>
+            <div className="flex items-center justify-center gap-3">
+              <span
+                className={`text-4xl md:text-6xl font-sans ${SUITS[trumpSuit].defaultColor} drop-shadow-md`}
+              >
+                {SUITS[trumpSuit].symbol}
+              </span>
+              <span className="text-3xl md:text-5xl font-black text-yellow-400 uppercase">
+                {SUITS[trumpSuit].name}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2517,7 +2564,7 @@ export default function App() {
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
 
-      {/* BALÃO DE DICAS (In-clicável e posicionado bem acima da mão do jogador) */}
+      {/* BALÃO DE DICAS */}
       {currentHint && (
         <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
           <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
@@ -2614,11 +2661,11 @@ export default function App() {
             <div
               className={`${
                 is2v2
-                  ? "w-8 h-8 md:w-12 md:h-12 border-2"
+                  ? "w-10 h-10 md:w-14 md:h-14 border-2 md:border-4"
                   : "w-10 h-10 md:w-14 md:h-14 border-4"
               } bg-white rounded-full border-yellow-500 flex items-center justify-center ${
-                is2v2 ? "text-lg md:text-2xl" : "text-xl md:text-3xl"
-              } shadow-[0_0_15px_rgba(250,204,21,0.5)]`}
+                is2v2 ? "text-xl md:text-3xl" : "text-xl md:text-3xl"
+              } shadow-[0_0_20px_rgba(250,204,21,0.8)] transition-transform hover:scale-110`}
             >
               <span className={`${SUITS[trumpSuit].defaultColor} font-sans`}>
                 {SUITS[trumpSuit].symbol}
@@ -2701,7 +2748,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA */}
             <div
               className={`absolute left-4 ${
                 is2v2
@@ -2772,7 +2818,7 @@ export default function App() {
                   </div>
                 )}
                 {showChat && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm">
+                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm z-50">
                     {CHAT_PHRASES.map((phrase) => (
                       <button
                         key={phrase}
@@ -2785,13 +2831,13 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2">
                   <button
                     onClick={() => {
                       setShowChat(!showChat);
                       setShowEmotes(false);
                     }}
-                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
                     title="Chat Rápido"
                   >
                     💬
@@ -2801,7 +2847,7 @@ export default function App() {
                       setShowEmotes(!showEmotes);
                       setShowChat(false);
                     }}
-                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
                     title="Reagir"
                   >
                     😀
