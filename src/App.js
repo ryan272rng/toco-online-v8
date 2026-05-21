@@ -13,7 +13,6 @@ import {
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
-// MOTOR DE ÁUDIO GLOBAL
 let globalAudioCtx = null;
 const initAudio = () => {
   if (!globalAudioCtx) {
@@ -549,8 +548,10 @@ export default function App() {
 
   const [avatarBase64, setAvatarBase64] = useState("");
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
+
+  // NOVIDADE: Controle das Abas na Tela Inicial
+  const [homeTab, setHomeTab] = useState("entrar"); // 'entrar', 'criar', 'sozinho'
   const [selectedMode, setSelectedMode] = useState("1v1");
-  const [homeTab, setHomeTab] = useState("sozinho"); // ESTADO NOVO PARA TELA INICIAL: sozinho, criar, entrar
 
   const isOfflineRef = useRef(false);
 
@@ -1435,6 +1436,14 @@ export default function App() {
     }
   }, [gameState, me?.isHost]);
 
+  useEffect(() => {
+    if (gameState === "playing" && trumpSuit && tableCards.length === 0) {
+      setShowTrumpBanner(true);
+      const timer = setTimeout(() => setShowTrumpBanner(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState, trumpSuit]);
+
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
       return;
@@ -2012,20 +2021,13 @@ export default function App() {
             Desenvolvido por Ryan Kilberth
           </p>
 
-          <button
-            onClick={forceUpdateGame}
-            className="mb-8 text-xs font-bold text-gray-400 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 hover:text-white hover:border-white/30 transition-colors"
-          >
-            🔄 Verificar Atualizações
-          </button>
-
           {isNetworkOffline && (
             <div className="w-full bg-red-600/80 text-white font-bold text-xs py-3 px-4 rounded-xl mb-4 animate-pulse text-center border border-red-400 shadow-lg">
               ⚠️ Sem conexão. Apenas o Modo Computador está disponível.
             </div>
           )}
 
-          <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 w-full shadow-2xl mb-8 flex flex-col items-center">
+          <div className="bg-black/40 backdrop-blur-xl p-6 rounded-3xl border border-white/10 w-full shadow-2xl mb-8 flex flex-col items-center">
             <div
               className="relative mb-6 cursor-pointer transform hover:scale-105 transition-transform"
               onClick={() => fileInputRef.current?.click()}
@@ -2048,7 +2050,7 @@ export default function App() {
               placeholder="Seu Nome ou Apelido"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-4 mb-6 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
+              className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-yellow-500 text-center font-bold text-lg"
             />
             {errorMsg && (
               <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
@@ -2056,77 +2058,136 @@ export default function App() {
               </p>
             )}
 
-            <div className="flex gap-4 mb-6 w-full">
+            {/* ABAS MINIMALISTAS DA TELA INICIAL */}
+            <div className="flex w-full bg-black/50 rounded-xl p-1 mb-6 border border-white/10">
               <button
-                onClick={() => setSelectedMode("1v1")}
-                className={`flex-1 py-3 rounded-xl font-black uppercase text-sm tracking-wider transition-all shadow-md ${
-                  selectedMode === "1v1"
-                    ? "bg-yellow-500 text-black border-2 border-white"
-                    : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                onClick={() => setHomeTab("entrar")}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                  homeTab === "entrar"
+                    ? "bg-blue-600 text-white shadow"
+                    : "text-gray-400 hover:text-white"
                 }`}
               >
-                1 VS 1
+                Entrar
               </button>
               <button
-                onClick={() => setSelectedMode("2v2")}
-                className={`flex-1 py-3 rounded-xl font-black uppercase text-sm tracking-wider transition-all shadow-md ${
-                  selectedMode === "2v2"
-                    ? "bg-yellow-500 text-black border-2 border-white"
-                    : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                onClick={() => setHomeTab("criar")}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                  homeTab === "criar"
+                    ? "bg-yellow-500 text-black shadow"
+                    : "text-gray-400 hover:text-white"
                 }`}
               >
-                2 VS 2
+                Criar Sala
+              </button>
+              <button
+                onClick={() => setHomeTab("sozinho")}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                  homeTab === "sozinho"
+                    ? "bg-gray-700 text-white shadow"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Offline
               </button>
             </div>
 
-            <button
-              onClick={startSinglePlayer}
-              className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-4 rounded-xl shadow-lg mb-6 uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
-            >
-              <span className="text-xl">🤖</span> JOGAR SOZINHO
-            </button>
+            {/* CONTEÚDO DAS ABAS */}
+            {homeTab === "entrar" && (
+              <div className="w-full flex gap-2 animate-fade-in">
+                <input
+                  type="number"
+                  placeholder="PIN da Sala"
+                  value={pinInput}
+                  disabled={isNetworkOffline}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  maxLength={4}
+                  className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest disabled:opacity-50"
+                />
+                <button
+                  onClick={joinRoom}
+                  disabled={isNetworkOffline}
+                  className={`font-black px-6 py-3 rounded-xl shadow-lg uppercase text-sm transition-transform active:scale-95 ${
+                    isNetworkOffline
+                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-500"
+                  }`}
+                >
+                  ENTRAR
+                </button>
+              </div>
+            )}
 
-            <div className="flex items-center gap-2 mb-6 opacity-60">
-              <div className="h-px bg-white/20 flex-1"></div>
-              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
-                Multiplayer
-              </span>
-              <div className="h-px bg-white/20 flex-1"></div>
-            </div>
+            {homeTab === "criar" && (
+              <div className="w-full animate-fade-in">
+                <div className="flex gap-4 w-full mb-4">
+                  <button
+                    onClick={() => setSelectedMode("1v1")}
+                    className={`flex-1 py-2 rounded-xl font-black uppercase text-xs tracking-wider transition-all shadow-md ${
+                      selectedMode === "1v1"
+                        ? "bg-yellow-500 text-black border-2 border-white"
+                        : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                    }`}
+                  >
+                    1 VS 1
+                  </button>
+                  <button
+                    onClick={() => setSelectedMode("2v2")}
+                    className={`flex-1 py-2 rounded-xl font-black uppercase text-xs tracking-wider transition-all shadow-md ${
+                      selectedMode === "2v2"
+                        ? "bg-yellow-500 text-black border-2 border-white"
+                        : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                    }`}
+                  >
+                    2 VS 2
+                  </button>
+                </div>
+                <button
+                  onClick={createRoom}
+                  disabled={isNetworkOffline}
+                  className={`w-full font-black py-3 rounded-xl shadow-lg uppercase tracking-widest text-sm transition-transform active:scale-95 ${
+                    isNetworkOffline
+                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500"
+                  }`}
+                >
+                  CRIAR NOVA SALA
+                </button>
+              </div>
+            )}
 
-            <button
-              onClick={createRoom}
-              disabled={isNetworkOffline}
-              className={`w-full font-black py-3 rounded-xl shadow-lg mb-4 uppercase tracking-widest text-sm transition-transform active:scale-95 ${
-                isNetworkOffline
-                  ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                  : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500"
-              }`}
-            >
-              CRIAR NOVA SALA
-            </button>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                placeholder="PIN"
-                value={pinInput}
-                disabled={isNetworkOffline}
-                onChange={(e) => setPinInput(e.target.value)}
-                maxLength={4}
-                className="w-full bg-black/50 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-center font-mono text-xl tracking-widest disabled:opacity-50"
-              />
-              <button
-                onClick={joinRoom}
-                disabled={isNetworkOffline}
-                className={`font-black px-6 py-3 rounded-xl shadow-lg uppercase text-sm transition-transform active:scale-95 ${
-                  isNetworkOffline
-                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-500"
-                }`}
-              >
-                ENTRAR
-              </button>
-            </div>
+            {homeTab === "sozinho" && (
+              <div className="w-full animate-fade-in">
+                <div className="flex gap-4 w-full mb-4">
+                  <button
+                    onClick={() => setSelectedMode("1v1")}
+                    className={`flex-1 py-2 rounded-xl font-black uppercase text-xs tracking-wider transition-all shadow-md ${
+                      selectedMode === "1v1"
+                        ? "bg-yellow-500 text-black border-2 border-white"
+                        : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                    }`}
+                  >
+                    1 VS 1
+                  </button>
+                  <button
+                    onClick={() => setSelectedMode("2v2")}
+                    className={`flex-1 py-2 rounded-xl font-black uppercase text-xs tracking-wider transition-all shadow-md ${
+                      selectedMode === "2v2"
+                        ? "bg-yellow-500 text-black border-2 border-white"
+                        : "bg-black/50 text-gray-400 border border-white/10 hover:text-white"
+                    }`}
+                  >
+                    2 VS 2
+                  </button>
+                </div>
+                <button
+                  onClick={startSinglePlayer}
+                  className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 text-white font-black py-3 rounded-xl shadow-lg uppercase tracking-widest text-sm transition-transform active:scale-95 border border-blue-500 flex items-center justify-center gap-2"
+                >
+                  <span className="text-xl">🤖</span> INICIAR OFFLINE
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2404,6 +2465,16 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-end gap-0.5">
+              {((!is2v2 && tocoTarget === playersList[0]?.id) ||
+                (is2v2 && myTeam.some((p) => p.id === tocoTarget))) && (
+                <div className="flex gap-0.5 mt-0.5 justify-center">
+                  {[...Array(lives)].map((_, i) => (
+                    <span key={i} className="text-[8px] animate-pulse">
+                      ❤️
+                    </span>
+                  ))}
+                </div>
+              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
@@ -2487,6 +2558,16 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-start gap-0.5">
+              {((!is2v2 && tocoTarget === playersList[1]?.id) ||
+                (is2v2 && opTeam.some((p) => p.id === tocoTarget))) && (
+                <div className="flex gap-0.5 mt-0.5 justify-center">
+                  {[...Array(lives)].map((_, i) => (
+                    <span key={i} className="text-[8px] animate-pulse">
+                      ❤️
+                    </span>
+                  ))}
+                </div>
+              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
@@ -2634,39 +2715,44 @@ export default function App() {
             is2v2
               ? "left-4 md:left-12 top-[15%] md:top-[20%]"
               : "left-4 md:left-8 top-1/2 -translate-y-1/2"
-          } flex flex-col items-center gap-4 opacity-80 hover:opacity-100 transition-all z-0`}
+          } flex flex-col items-center opacity-80 hover:opacity-100 transition-all z-0`}
         >
+          {/* TRUNFO SOBREPOSTO AO BARALHO */}
           {deck.length > 0 && (
             <div
               className={`${
                 is2v2
                   ? "w-12 h-16 md:w-16 md:h-24"
                   : "w-[52px] h-[76px] md:w-20 md:h-28"
-              } bg-blue-900 border-2 border-white/50 rounded-lg flex items-center justify-center shadow-xl relative`}
+              } bg-blue-900 border-2 border-white/50 rounded-lg flex items-center justify-center shadow-xl relative mt-2 md:mt-4`}
               style={{
                 backgroundImage:
                   "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px)",
               }}
             >
               <div className="absolute inset-1 border border-white/30 rounded border-dashed"></div>
-              <div className="absolute -top-2 -right-2 bg-red-600 text-[10px] text-white font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white shadow">
+              <div className="absolute -bottom-2 -right-2 bg-red-600 text-[10px] text-white font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white shadow">
                 {deck.length}
               </div>
-            </div>
-          )}
-          {trumpSuit && (
-            <div
-              className={`${
-                is2v2
-                  ? "w-10 h-10 md:w-14 md:h-14 border-2 md:border-4"
-                  : "w-10 h-10 md:w-14 md:h-14 border-4"
-              } bg-white rounded-full border-yellow-500 flex items-center justify-center ${
-                is2v2 ? "text-xl md:text-3xl" : "text-xl md:text-3xl"
-              } shadow-[0_0_20px_rgba(250,204,21,0.8)] transition-transform hover:scale-110`}
-            >
-              <span className={`${SUITS[trumpSuit].defaultColor} font-sans`}>
-                {SUITS[trumpSuit].symbol}
-              </span>
+
+              {/* O TRUNFO AGORA FICA AQUI DENTRO (Sobrepondo) */}
+              {trumpSuit && (
+                <div
+                  className={`absolute -top-4 -right-4 md:-top-6 md:-right-6 ${
+                    is2v2
+                      ? "w-8 h-8 md:w-12 md:h-12 border-2 md:border-4"
+                      : "w-10 h-10 md:w-14 md:h-14 border-4"
+                  } bg-white rounded-full border-yellow-500 flex items-center justify-center ${
+                    is2v2 ? "text-xl md:text-3xl" : "text-xl md:text-3xl"
+                  } shadow-[0_0_20px_rgba(250,204,21,0.8)] transition-transform hover:scale-110 z-10`}
+                >
+                  <span
+                    className={`${SUITS[trumpSuit].defaultColor} font-sans`}
+                  >
+                    {SUITS[trumpSuit].symbol}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2743,13 +2829,15 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
+            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA NO 2V2 */}
             <div
               className={`absolute left-4 ${
                 is2v2
-                  ? "bottom-40 md:bottom-28 gap-6"
+                  ? "bottom-44 md:bottom-32 gap-6"
                   : "bottom-48 md:bottom-20 gap-2"
               } z-40 flex flex-col items-center`}
             >
+              {/* Botão Mãos */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2760,12 +2848,13 @@ export default function App() {
                 </span>
               </button>
 
+              {/* Avatar do Jogador (Só aparece na mesa no modo 2v2) */}
               {is2v2 && (
                 <div className="flex flex-col items-center gap-1">
                   <PlayerAvatar
                     src={me?.avatar}
                     name={playerName}
-                    size="md"
+                    size="sm"
                     isTurn={turn === me?.id}
                     isOpponent={false}
                   />
@@ -2804,7 +2893,7 @@ export default function App() {
                   </div>
                 )}
                 {showChat && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm">
+                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm z-50">
                     {CHAT_PHRASES.map((phrase) => (
                       <button
                         key={phrase}
@@ -2823,7 +2912,7 @@ export default function App() {
                       setShowChat(!showChat);
                       setShowEmotes(false);
                     }}
-                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
                     title="Chat Rápido"
                   >
                     💬
@@ -2833,7 +2922,7 @@ export default function App() {
                       setShowEmotes(!showEmotes);
                       setShowChat(false);
                     }}
-                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg"
+                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
                     title="Reagir"
                   >
                     😀
