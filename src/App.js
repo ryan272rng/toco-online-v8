@@ -415,17 +415,19 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
-// COMPONENTE: Oponente na Borda da Mesa
 const EdgePlayer = ({
   player,
   handCount,
   position,
   isTurn,
   isOpponent,
-  activeChat,
+  tocoTarget,
+  lives,
   settings,
+  activeChat,
 }) => {
   if (!player) return null;
+  const isTarget = tocoTarget === player.id;
   const hasChat = activeChat && activeChat.senderId === player.id;
 
   let containerClass =
@@ -547,9 +549,10 @@ export default function App() {
 
   const [avatarBase64, setAvatarBase64] = useState("");
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
-  const isOfflineRef = useRef(false);
-
   const [selectedMode, setSelectedMode] = useState("1v1");
+  const [homeTab, setHomeTab] = useState("sozinho"); // ESTADO NOVO PARA TELA INICIAL: sozinho, criar, entrar
+
+  const isOfflineRef = useRef(false);
 
   const [isNetworkOffline, setIsNetworkOffline] = useState(!navigator.onLine);
   const [localProcessing, setLocalProcessing] = useState(false);
@@ -561,6 +564,8 @@ export default function App() {
   const [activeReaction, setActiveReaction] = useState(null);
   const [activeChatMessage, setActiveChatMessage] = useState(null);
   const [isShaking, setIsShaking] = useState(false);
+
+  const [showTrumpBanner, setShowTrumpBanner] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -656,7 +661,7 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_SIZE = 600; // Qualidade aumentada
+        const MAX_SIZE = 600;
         let width = img.width;
         let height = img.height;
         if (width > height) {
@@ -1399,12 +1404,10 @@ export default function App() {
   };
 
   const confirmTrumpAndDeal = (suit) => {
-    // Agora mudamos para dealing, e o efeito do host vai tratar a pausa do Anúncio
     syncState({ trumpSuit: suit, gameState: "dealing" });
     setLocalProcessing(false);
   };
 
-  // EFEITO DO HOST: Manda as cartas e pausa na Tela de Anúncio
   useEffect(() => {
     if (me?.isHost && gameState === "dealing" && roomData) {
       const currentDeck = [...roomData.deck];
@@ -1421,7 +1424,6 @@ export default function App() {
         gameState: "announcing_trump",
       });
 
-      // O Host conta 3 segundos e libera a partida para "playing"
       setTimeout(() => {
         if (isOfflineRef.current) {
           setRoomData((prev) => ({ ...prev, gameState: "playing" }));
@@ -1607,8 +1609,6 @@ export default function App() {
     let updates = {};
 
     const isMyTeamWinner = winningTeam === myTeam;
-
-    // RepIds são usados apenas para garantir que a interface saiba de qual lado foi a vitória
     const winnerRepId = winningTeam[0].id;
     const loserTeam = winningTeam === myTeam ? opTeam : myTeam;
     const loserRepId = loserTeam[0].id;
@@ -2404,16 +2404,6 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-end gap-0.5">
-              {((!is2v2 && tocoTarget === playersList[0]?.id) ||
-                (is2v2 && myTeam.some((p) => p.id === tocoTarget))) && (
-                <div className="flex gap-0.5 mt-0.5 justify-center">
-                  {[...Array(lives)].map((_, i) => (
-                    <span key={i} className="text-[8px] animate-pulse">
-                      ❤️
-                    </span>
-                  ))}
-                </div>
-              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
@@ -2497,16 +2487,6 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-start gap-0.5">
-              {((!is2v2 && tocoTarget === playersList[1]?.id) ||
-                (is2v2 && opTeam.some((p) => p.id === tocoTarget))) && (
-                <div className="flex gap-0.5 mt-0.5 justify-center">
-                  {[...Array(lives)].map((_, i) => (
-                    <span key={i} className="text-[8px] animate-pulse">
-                      ❤️
-                    </span>
-                  ))}
-                </div>
-              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
