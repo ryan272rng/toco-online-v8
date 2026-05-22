@@ -1,18 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
 import { ref, onValue, set, update, get } from "firebase/database";
-import {
-  insertCoin,
-  myPlayer,
-  isHost,
-  useMultiplayerState,
-  usePlayersList,
-} from "playroomkit";
 
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
+// MOTOR DE ÁUDIO GLOBAL OTIMIZADO (Anti-Vazamento de Memória)
 let globalAudioCtx = null;
 const initAudio = () => {
   if (!globalAudioCtx) {
@@ -181,15 +175,13 @@ const getTableBg = (style) =>
     TABLE_STYLES[style] || TABLE_STYLES.tradicional
   }`;
 
+// NOVAS FALAS ESTRATÉGICAS
 const CHAT_PHRASES = [
   "Corta! ✂️",
   "Bisca! 🃏",
   "Demorou, hein! ⏳",
-  "Tá com medo? 🐔",
   "Sorte de principiante! 🍀",
   "Toma essa! 💥",
-  "Boa jogada! 👏",
-  "Lascou... 😭",
 ];
 
 // ============================================================================
@@ -416,6 +408,7 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
+// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2) - SEM CHAT INTERNO
 const EdgePlayer = ({
   player,
   handCount,
@@ -425,34 +418,26 @@ const EdgePlayer = ({
   tocoTarget,
   lives,
   settings,
-  activeChat,
 }) => {
   if (!player) return null;
-  const isTarget = tocoTarget === player.id;
-  const hasChat = activeChat && activeChat.senderId === player.id;
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
-  let chatPositionClass = "";
-
   if (position === "top") {
     containerClass += "top-4 left-1/2 -translate-x-1/2";
-    chatPositionClass = "top-full mt-2 left-1/2 -translate-x-1/2";
   } else if (position === "left") {
     containerClass +=
       "left-2 md:left-6 top-[60%] -translate-y-1/2 flex-row gap-4";
     flexDir = "flex-col items-start";
     infoAlign = "text-left";
-    chatPositionClass = "left-full ml-4 top-1/2 -translate-y-1/2";
   } else if (position === "right") {
     containerClass +=
       "right-2 md:right-6 top-[60%] -translate-y-1/2 flex-row-reverse gap-4";
     flexDir = "flex-col items-end";
     infoAlign = "text-right";
-    chatPositionClass = "right-full mr-4 top-1/2 -translate-y-1/2";
   }
 
   let fanGlow = "";
@@ -464,14 +449,6 @@ const EdgePlayer = ({
 
   return (
     <div className={containerClass}>
-      {hasChat && (
-        <div
-          className={`pointer-events-none absolute z-[140] bg-white text-blue-900 font-black text-xs md:text-sm px-4 py-2 rounded-2xl shadow-xl border border-gray-200 animate-chat whitespace-nowrap ${chatPositionClass}`}
-        >
-          {activeChat.text}
-        </div>
-      )}
-
       <div className={`flex ${flexDir} items-center gap-1 text-center`}>
         <PlayerAvatar
           src={player.avatar}
@@ -572,7 +549,7 @@ export default function App() {
   const [isShaking, setIsShaking] = useState(false);
 
   const [showTrumpBanner, setShowTrumpBanner] = useState(false);
-  const [isJoining, setIsJoining] = useState(false); // CONTROLE ANTI-SPAM
+  const [isJoining, setIsJoining] = useState(false);
 
   const fileInputRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -606,11 +583,15 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("tocoSettings", JSON.stringify(settings));
-    if (playerName.trim()) localStorage.setItem("tocoPlayerName", playerName);
-  }, [settings, playerName]);
+  }, [settings]);
 
   useEffect(() => {
-    if (roomData?.currentReaction) {
+    if (playerName.trim()) localStorage.setItem("tocoPlayerName", playerName);
+  }, [playerName]);
+
+  // SINCRONIZAÇÃO VISUAL INDEPENDENTE (Evita sumir a mensagem rápido demais nos outros celulares)
+  useEffect(() => {
+    if (roomData?.currentReaction?.ts) {
       setActiveReaction(roomData.currentReaction.emoji);
       const timer = setTimeout(() => setActiveReaction(null), 2500);
       return () => clearTimeout(timer);
@@ -618,12 +599,12 @@ export default function App() {
   }, [roomData?.currentReaction?.ts]);
 
   useEffect(() => {
-    if (roomData?.currentMessage) {
+    if (roomData?.currentMessage?.ts) {
       setActiveChatMessage(roomData.currentMessage);
       const timer = setTimeout(() => setActiveChatMessage(null), 3500);
       return () => clearTimeout(timer);
     }
-  }, [roomData?.currentMessage?.ts]);
+  }, [roomData?.currentMessage?.ts, roomData?.currentMessage?.text]);
 
   const updateSetting = (key, value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -655,7 +636,7 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_SIZE = 600;
+        const MAX_SIZE = 800; // Super Alta Resolução
         let width = img.width;
         let height = img.height;
         if (width > height) {
@@ -682,6 +663,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // CORREÇÃO: Limpador automático de Memória do Áudio para parar travamentos
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
@@ -708,6 +690,7 @@ export default function App() {
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.3);
+        if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       } else if (type === "win") {
         osc.type = "triangle";
         osc.frequency.setValueAtTime(440, ctx.currentTime);
@@ -742,6 +725,11 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.2);
       }
+
+      osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+      };
     } catch (e) {
       console.log(e);
     }
@@ -990,26 +978,14 @@ export default function App() {
   };
 
   const sendEmote = (emoji) => {
-    if (isNetworkOffline) return;
+    if (isNetworkOffline && !isSinglePlayer) return;
     syncState({ currentReaction: { emoji, senderId: me.id, ts: Date.now() } });
     setShowEmotes(false);
   };
 
   const sendChatMessage = (text) => {
-    if (isNetworkOffline) return;
-
-    // CORREÇÃO: Enviamos a mensagem via Firebase e depois fechamos a caixa.
-    if (isOfflineRef.current) {
-      setRoomData((prev) => ({
-        ...prev,
-        currentMessage: { text, senderId: me.id, ts: Date.now() },
-      }));
-    } else {
-      update(ref(database, `rooms/${roomId}`), {
-        currentMessage: { text, senderId: me.id, ts: Date.now() },
-      });
-    }
-
+    if (isNetworkOffline && !isSinglePlayer) return;
+    syncState({ currentMessage: { text, senderId: me.id, ts: Date.now() } });
     setShowChat(false);
   };
 
@@ -1572,11 +1548,14 @@ export default function App() {
       cards: validCards.map((c) => c.card),
     };
 
+    // CARTAS PUXAM SEMPRE PARA O LADO CERTO DO VENCEDOR
+    const destinationId = isMyTeamWin ? me?.id : opTeam[0]?.id;
+
     syncState({
       roundScores: newScores,
       trickFeedback: { winnerName, pts },
       trickHistory: [...currentHistory, trickData],
-      sweepingTo: winnerId,
+      sweepingTo: destinationId,
     });
 
     const updatedTeamAScore = myTeam.reduce(
@@ -1637,7 +1616,6 @@ export default function App() {
     let resultType = "";
     let updates = {};
 
-    // CORREÇÃO: Comparar IDs explicitamente em vez do objeto inteiro
     const isMyTeamWinner = winningTeam.some((p) => p?.id === me?.id);
     const winnerRepId = winningTeam[0]?.id;
     const loserTeam = isMyTeamWinner ? opTeam : myTeam;
@@ -2413,7 +2391,53 @@ export default function App() {
         .animate-fade-in { animation: fade-in-overlay 0.3s ease-out forwards; }
       `}</style>
 
-      {/* PLACAR UNIFICADO */}
+      {/* CHAT BUBBLES GLOBAIS (Garante que nunca serão cortados pelo overflow) */}
+      {activeChatMessage && (
+        <>
+          {/* Eu */}
+          {activeChatMessage.senderId === me?.id && (
+            <div className="pointer-events-none absolute bottom-44 left-1/2 -translate-x-1/2 z-[999] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-blue-200 animate-chat whitespace-nowrap">
+              Você: {activeChatMessage.text}
+            </div>
+          )}
+
+          {/* Oponente 1v1 */}
+          {!is2v2 && activeChatMessage.senderId === playersList[1]?.id && (
+            <div className="pointer-events-none absolute top-32 left-1/2 -translate-x-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
+              {playersList[1]?.name}: {activeChatMessage.text}
+            </div>
+          )}
+
+          {/* Parceiro Topo (2v2) */}
+          {is2v2 &&
+            topPlayer &&
+            activeChatMessage.senderId === topPlayer.id && (
+              <div className="pointer-events-none absolute top-32 left-1/2 -translate-x-1/2 z-[999] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-blue-200 animate-chat whitespace-nowrap">
+                {topPlayer.name}: {activeChatMessage.text}
+              </div>
+            )}
+
+          {/* Oponente Esquerda (2v2) */}
+          {is2v2 &&
+            leftPlayer &&
+            activeChatMessage.senderId === leftPlayer.id && (
+              <div className="pointer-events-none absolute top-1/2 left-28 -translate-y-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
+                {leftPlayer.name}: {activeChatMessage.text}
+              </div>
+            )}
+
+          {/* Oponente Direita (2v2) */}
+          {is2v2 &&
+            rightPlayer &&
+            activeChatMessage.senderId === rightPlayer.id && (
+              <div className="pointer-events-none absolute top-1/2 right-28 -translate-y-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
+                {rightPlayer.name}: {activeChatMessage.text}
+              </div>
+            )}
+        </>
+      )}
+
+      {/* PLACAR UNIFICADO COM VIDAS */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-50">
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
@@ -2467,6 +2491,20 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-end gap-0.5">
+              {/* NOVA CONTAGEM DE MÃOS (Vidas) */}
+              {((!is2v2 && tocoTarget === playersList[0]?.id) ||
+                (is2v2 && myTeam.some((p) => p?.id === tocoTarget))) && (
+                <div className="bg-black/50 px-2 py-1 rounded-full flex gap-1 items-center mt-1 border border-white/10">
+                  <span className="text-[10px] font-bold text-gray-300 mr-1">
+                    {4 - lives}ª Mão
+                  </span>
+                  {[...Array(lives)].map((_, i) => (
+                    <span key={i} className="text-[10px] animate-pulse">
+                      ❤️
+                    </span>
+                  ))}
+                </div>
+              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
@@ -2550,6 +2588,20 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-start gap-0.5">
+              {/* NOVA CONTAGEM DE MÃOS (Vidas) */}
+              {((!is2v2 && tocoTarget === playersList[1]?.id) ||
+                (is2v2 && opTeam.some((p) => p?.id === tocoTarget))) && (
+                <div className="bg-black/50 px-2 py-1 rounded-full flex gap-1 items-center mt-1 border border-white/10 flex-row-reverse">
+                  <span className="text-[10px] font-bold text-gray-300 ml-1">
+                    {4 - lives}ª Mão
+                  </span>
+                  {[...Array(lives)].map((_, i) => (
+                    <span key={i} className="text-[10px] animate-pulse">
+                      ❤️
+                    </span>
+                  ))}
+                </div>
+              )}
               <span className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wide">
                 Tocos:{" "}
                 <span className="text-white font-bold text-xs md:text-sm bg-white/10 px-1.5 py-0.5 rounded">
@@ -2595,6 +2647,19 @@ export default function App() {
               </div>
               <span className="text-4xl md:text-6xl font-black text-yellow-400 uppercase tracking-widest drop-shadow-lg">
                 {SUITS[trumpSuit].name}
+              </span>
+            </div>
+
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <div className="flex gap-1 text-2xl">
+                {[...Array(lives)].map((_, i) => (
+                  <span key={i} className="animate-pulse">
+                    ❤️
+                  </span>
+                ))}
+              </div>
+              <span className="text-yellow-400 font-bold uppercase tracking-widest text-sm">
+                {4 - lives}ª Mão do Toco
               </span>
             </div>
           </div>
@@ -2659,7 +2724,6 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
-            activeChat={activeChatMessage}
           />
         )}
 
@@ -2673,7 +2737,6 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
-            activeChat={activeChatMessage}
           />
         )}
 
@@ -2687,7 +2750,6 @@ export default function App() {
             tocoTarget={tocoTarget}
             lives={lives}
             settings={settings}
-            activeChat={activeChatMessage}
           />
         )}
 
@@ -2699,7 +2761,6 @@ export default function App() {
               : "left-4 md:left-8 top-1/2 -translate-y-1/2"
           } flex flex-col items-center opacity-80 hover:opacity-100 transition-all z-0`}
         >
-          {/* TRUNFO SOBREPOSTO AO BARALHO */}
           {deck.length > 0 && (
             <div
               className={`${
@@ -2717,7 +2778,6 @@ export default function App() {
                 {deck.length}
               </div>
 
-              {/* O TRUNFO FICA AQUI DENTRO */}
               {trumpSuit && (
                 <div
                   className={`absolute -top-4 -right-4 md:-top-6 md:-right-6 ${
@@ -2739,16 +2799,16 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM CARTAS JOGADAS (SOMENTE ESTA DIV PODE TREMER) */}
+        {/* ÁREA DA MESA COM CARTAS JOGADAS */}
         <div
           className={`relative flex flex-col items-center justify-center w-full ${
             is2v2
               ? "translate-y-12 md:translate-y-16"
               : "translate-y-6 md:translate-y-12"
-          } ${isShaking ? "animate-shake" : ""}`}
+          }`}
         >
           <div
-            className={`${
+            className={`${isShaking ? "animate-shake" : ""} ${
               is2v2
                 ? "grid grid-cols-2 gap-x-8 gap-y-4"
                 : "flex gap-4 md:gap-8 flex-wrap"
@@ -2811,7 +2871,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA E AVATAR ORGANIZADOS EM COLUNA NO 2V2 */}
             <div
               className={`absolute left-4 ${
                 is2v2
@@ -2819,7 +2878,6 @@ export default function App() {
                   : "bottom-48 md:bottom-20 gap-2"
               } z-40 flex flex-col items-center`}
             >
-              {/* Botão Mãos */}
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-white/60 hover:text-white transition-all duration-200 flex flex-col items-center gap-1 active:scale-95"
@@ -2830,7 +2888,6 @@ export default function App() {
                 </span>
               </button>
 
-              {/* Avatar do Jogador Local */}
               {is2v2 && (
                 <div className="flex flex-col items-center gap-1">
                   <PlayerAvatar
@@ -2935,16 +2992,6 @@ export default function App() {
                       Dica
                     </span>
                   </button>
-                </div>
-              )}
-
-            {/* Balão do seu Chat Local no 1v1 */}
-            {!is2v2 &&
-              activeChatMessage &&
-              activeChatMessage.senderId === me?.id && (
-                <div className="pointer-events-none absolute bottom-44 left-1/2 -translate-x-1/2 z-[140] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-gray-200 animate-chat whitespace-nowrap">
-                  <span className="text-gray-500 mr-2 text-xs">Você:</span>
-                  {activeChatMessage.text}
                 </div>
               )}
           </>
