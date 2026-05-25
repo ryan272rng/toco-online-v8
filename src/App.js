@@ -1,19 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
 import { ref, onValue, set, update, get } from "firebase/database";
-import {
-  insertCoin,
-  myPlayer,
-  isHost,
-  useMultiplayerState,
-  usePlayersList,
-} from "playroomkit";
 
 // ============================================================================
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
-// MOTOR DE ÁUDIO GLOBAL OTIMIZADO (Anti-Vazamento de Memória)
 let globalAudioCtx = null;
 const initAudio = () => {
   if (!globalAudioCtx) {
@@ -26,103 +18,7 @@ const initAudio = () => {
   return globalAudioCtx;
 };
 
-const CardFanIcon = () => (
-  <svg
-    width="34"
-    height="34"
-    viewBox="-2 -2 38 38"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className="drop-shadow-lg opacity-90 mb-1"
-  >
-    <rect
-      x="2"
-      y="2.5"
-      width="16"
-      height="23"
-      rx="3"
-      fill="white"
-      stroke="#D1D5DB"
-      strokeWidth="1.5"
-    />
-    <text
-      x="4"
-      y="9"
-      fill="#DC2626"
-      fontFamily="sans-serif"
-      fontSize="5"
-      fontWeight="bold"
-    >
-      ♥
-    </text>
-    <rect
-      x="0"
-      y="4.5"
-      width="16"
-      height="23"
-      rx="3"
-      transform="rotate(-15 0 4.5)"
-      fill="white"
-      stroke="#D1D5DB"
-      strokeWidth="1.5"
-    />
-    <text
-      x="1"
-      y="9"
-      fill="#111827"
-      fontFamily="sans-serif"
-      fontSize="5"
-      fontWeight="bold"
-      transform="rotate(-15 1 9)"
-    >
-      ♣
-    </text>
-    <rect
-      x="12"
-      y="2.5"
-      width="16"
-      height="23"
-      rx="3"
-      transform="rotate(15 12 2.5)"
-      fill="white"
-      stroke="#D1D5DB"
-      strokeWidth="1.5"
-    />
-    <text
-      x="13"
-      y="8"
-      fill="#DC2626"
-      fontFamily="sans-serif"
-      fontSize="5"
-      fontWeight="bold"
-      transform="rotate(15 13 8)"
-    >
-      ♦
-    </text>
-    <rect
-      x="18"
-      y="4.5"
-      width="16"
-      height="23"
-      rx="3"
-      transform="rotate(30 18 4.5)"
-      fill="white"
-      stroke="#D1D5DB"
-      strokeWidth="1.5"
-    />
-    <text
-      x="19"
-      y="11"
-      fill="#111827"
-      fontFamily="sans-serif"
-      fontSize="5"
-      fontWeight="bold"
-      transform="rotate(30 19 11)"
-    >
-      ♠
-    </text>
-  </svg>
-);
+const CardFanIcon = () => <span className="text-2xl drop-shadow-md">🎴</span>;
 
 const SUITS = {
   hearts: {
@@ -186,14 +82,15 @@ const getTableBg = (style) =>
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
 
-const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
+const PlayerAvatar = ({ src, name = "", size = "md", isTurn, isOpponent }) => {
+  const safeName = String(name || "");
   const dim =
     size === "lg"
       ? "w-24 h-24 text-3xl"
       : size === "sm"
       ? "w-10 h-10 text-sm"
       : "w-10 h-10 md:w-12 md:h-12 text-lg";
-  const initial = name ? name.charAt(0).toUpperCase() : "?";
+  const initial = safeName ? safeName.charAt(0).toUpperCase() : "?";
 
   let ringColor = "border-2 border-white/30 shadow-lg";
   let turnScale = "";
@@ -204,7 +101,6 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
         ? "ring-4 ring-red-500 shadow-[0_0_20px_rgba(239,68,68,0.9)]"
         : "ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.9)]"
       : "border-2 border-white/30 shadow-lg";
-
     if (isTurn) turnScale = "scale-125 z-20";
   }
 
@@ -212,7 +108,7 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
     return (
       <img
         src={src}
-        alt={name}
+        alt={safeName}
         className={`${dim} rounded-full object-cover ${ringColor} ${turnScale} transition-all duration-300`}
       />
     );
@@ -221,7 +117,7 @@ const PlayerAvatar = ({ src, name, size = "md", isTurn, isOpponent }) => {
     <div
       className={`${dim} rounded-full bg-gradient-to-br from-blue-700 to-indigo-900 ${ringColor} ${turnScale} flex items-center justify-center text-white font-black transition-all duration-300`}
     >
-      {name.includes("Robô") || name === "Computador" ? "🤖" : initial}
+      {safeName.includes("Robô") || safeName === "Computador" ? "🤖" : initial}
     </div>
   );
 };
@@ -406,39 +302,36 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
-// COMPONENTE: Oponente na Borda da Mesa
 const EdgePlayer = ({
   player,
   handCount,
   position,
   isTurn,
   isOpponent,
+  tocoTarget,
+  lives,
   settings,
 }) => {
   if (!player) return null;
+  const isTarget = tocoTarget === player.id;
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
   let flexDir = "flex-col";
   let infoAlign = "text-center";
 
-  let animationClass = "";
-
   if (position === "top") {
     containerClass += "top-4 left-1/2 -translate-x-1/2";
-    animationClass = "animate-deal-top"; // Vinculado ao novo Keyframe de Distribuição
   } else if (position === "left") {
     containerClass +=
       "left-2 md:left-6 top-[60%] -translate-y-1/2 flex-row gap-4";
     flexDir = "flex-col items-start";
     infoAlign = "text-left";
-    animationClass = "animate-deal-left";
   } else if (position === "right") {
     containerClass +=
       "right-2 md:right-6 top-[60%] -translate-y-1/2 flex-row-reverse gap-4";
     flexDir = "flex-col items-end";
     infoAlign = "text-right";
-    animationClass = "animate-deal-right";
   }
 
   let fanGlow = "";
@@ -500,13 +393,10 @@ const EdgePlayer = ({
               <div
                 key={i}
                 style={{
-                  animationDelay: `${i * 0.08}s`,
                   transform: transformStyle,
                   transformOrigin: "center center",
                 }}
-                className={`${
-                  settings.animations ? animationClass : ""
-                } transition-all duration-300`}
+                className="transition-all duration-300"
               >
                 <CardBack settings={settings} isMini={true} />
               </div>
@@ -522,18 +412,18 @@ export default function App() {
   // ============================================================================
   // 2. ESTADOS GERAIS E CONFIGURAÇÕES
   // ============================================================================
-  const [playerName, setPlayerName] = useState(() => {
-    return localStorage.getItem("tocoPlayerName") || "";
-  });
+  const [playerName, setPlayerName] = useState(
+    () => localStorage.getItem("tocoPlayerName") || ""
+  );
   const [pinInput, setPinInput] = useState("");
   const [roomId, setRoomId] = useState(null);
   const [me, setMe] = useState(null);
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [avatarBase64, setAvatarBase64] = useState(() => {
-    return localStorage.getItem("tocoPlayerAvatar") || "";
-  });
+  const [avatarBase64, setAvatarBase64] = useState(
+    () => localStorage.getItem("tocoPlayerAvatar") || ""
+  );
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
 
   const [homeTab, setHomeTab] = useState("entrar");
@@ -593,7 +483,7 @@ export default function App() {
   }, [playerName]);
 
   // ============================================================================
-  // SISTEMA DE MÚSICA DE FUNDO (BGM) - JAZZ / LOFI PROCEDURAL
+  // SISTEMA DE MÚSICA DE FUNDO
   // ============================================================================
   const stopBgm = () => {
     if (bgmIntervalRef.current) {
@@ -614,7 +504,6 @@ export default function App() {
     if (!ctx) return;
     stopBgm();
 
-    // Progressão harmônica relaxante de Cassino Jazz (Cmaj7 - Am7 - Dm7 - G7)
     const progressions = [
       [130.81, 164.81, 196.0, 246.94], // Cmaj7
       [110.0, 130.81, 164.81, 196.0], // Am7
@@ -630,7 +519,6 @@ export default function App() {
       const freqs = progressions[chordIdx];
       chordIdx = (chordIdx + 1) % progressions.length;
 
-      // Filtro LowPass abafador de fita para estética Lofi
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
       filter.frequency.setValueAtTime(450, now);
@@ -640,14 +528,13 @@ export default function App() {
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
 
-        osc.type = "triangle"; // Onda macia perfeita para acordes Rhodes
+        osc.type = "triangle";
         osc.frequency.setValueAtTime(freq, now);
 
-        // Volume extremamente sutil de fundo
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(0.012, now + 1.5); // Ataque suave
+        gainNode.gain.linearRampToValueAtTime(0.012, now + 1.5);
         gainNode.gain.setValueAtTime(0.012, now + 4.5);
-        gainNode.gain.linearRampToValueAtTime(0, now + 6.0); // Release suave
+        gainNode.gain.linearRampToValueAtTime(0, now + 6.0);
 
         osc.connect(gainNode);
         gainNode.connect(filter);
@@ -655,6 +542,12 @@ export default function App() {
         osc.start(now);
         osc.stop(now + 6.0);
 
+        osc.onended = () => {
+          try {
+            osc.disconnect();
+            gainNode.disconnect();
+          } catch (e) {}
+        };
         activeBgmNodesRef.current.push(osc);
       });
     };
@@ -664,11 +557,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (settings.bgm && roomId) {
-      startBgm();
-    } else {
-      stopBgm();
-    }
+    if (settings.bgm && roomId) startBgm();
+    else stopBgm();
     return () => stopBgm();
   }, [settings.bgm, roomId]);
 
@@ -681,9 +571,7 @@ export default function App() {
     setIsUpdating(true);
     if ("serviceWorker" in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
-      for (let registration of registrations) {
-        await registration.unregister();
-      }
+      for (let registration of registrations) await registration.unregister();
     }
     if ("caches" in window) {
       const keys = await caches.keys();
@@ -694,14 +582,384 @@ export default function App() {
     }, 1500);
   };
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_SIZE = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.95);
+        setAvatarBase64(compressedBase64);
+        localStorage.setItem("tocoPlayerAvatar", compressedBase64);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const playSoundEffect = (type) => {
+    if (!settings.sound) return;
+    try {
+      const ctx = initAudio();
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === "card") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+      } else if (type === "heavy_card") {
+        osc.type = "square";
+        osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+      } else if (type === "win") {
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(554, ctx.currentTime + 0.1);
+        osc.frequency.setValueAtTime(659, ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } else if (type === "lose") {
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(250, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.4);
+      } else if (type === "trick_win") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      } else if (type === "trick_lose") {
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.setValueAtTime(200, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      }
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (e) {}
+      };
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const stateRef = useRef(roomData);
+  useEffect(() => {
+    stateRef.current = roomData;
+  }, [roomData]);
+  useEffect(() => {
+    setCurrentHint(null);
+  }, [roomData?.tableCards?.length, roomData?.turn]);
+
+  // ============================================================================
+  // 3. LÓGICA DE REDE E RECONEXÃO
+  // ============================================================================
+  const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  const syncState = (updates) => {
+    if (isOfflineRef.current) {
+      setRoomData((prev) => {
+        const newData = { ...prev, ...updates };
+        stateRef.current = newData;
+        return newData;
+      });
+    } else {
+      if (!roomId || isNetworkOffline) return;
+      update(ref(database, `rooms/${roomId}`), updates);
+    }
+  };
+
+  const exitGame = () => {
+    setRoomId(null);
+    setRoomData(null);
+    setIsSinglePlayer(false);
+    isOfflineRef.current = false;
+    setShowSettings(false);
+    setShowRules(false);
+  };
+
+  const createRoom = async () => {
+    if (isNetworkOffline) return setErrorMsg("Conecte-se à internet.");
+    if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
+    if (isJoining) return;
+
+    setIsJoining(true);
+    const newPin = generatePin();
+    const myId = `player_${Date.now()}`;
+    const newMe = {
+      id: myId,
+      name: playerName,
+      isHost: true,
+      avatar: avatarBase64,
+      slot: 0,
+    };
+
+    const initialRoomData = {
+      gameState: "lobby",
+      hostId: myId,
+      gameMode: selectedMode,
+      players: { [myId]: newMe },
+      deck: [],
+      tableCards: [],
+      trumpSuit: null,
+      turn: null,
+      hands: {},
+      roundScores: { [myId]: 0 },
+      gamePoints: { [myId]: 0 },
+      tocoTarget: null,
+      lives: 3,
+      trickHistory: [],
+      sweepingTo: null,
+    };
+
+    try {
+      setIsSinglePlayer(false);
+      isOfflineRef.current = false;
+      await set(ref(database, `rooms/${newPin}`), initialRoomData);
+      setMe(newMe);
+      setRoomId(newPin);
+    } catch (e) {
+      setErrorMsg("Erro de conexão.");
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const joinRoom = async () => {
+    if (isNetworkOffline) return setErrorMsg("Conecte-se à internet.");
+    if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
+    if (!pinInput.trim() || pinInput.length !== 4)
+      return setErrorMsg("PIN inválido!");
+    if (isJoining) return;
+
+    setIsJoining(true);
+    try {
+      const roomRef = ref(database, `rooms/${pinInput}`);
+      const snapshot = await get(roomRef);
+
+      if (snapshot.exists()) {
+        const currentRoomData = snapshot.val();
+        const existingPlayers = Object.values(currentRoomData.players || {});
+        const matchedPlayer = existingPlayers.find(
+          (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
+        );
+
+        const maxPlayers = currentRoomData.gameMode === "2v2" ? 4 : 2;
+
+        let myId;
+        let newMe;
+
+        if (matchedPlayer) {
+          myId = matchedPlayer.id;
+          newMe = matchedPlayer;
+          if (avatarBase64)
+            await update(ref(database, `rooms/${pinInput}/players/${myId}`), {
+              avatar: avatarBase64,
+            });
+        } else if (existingPlayers.length >= maxPlayers) {
+          setErrorMsg("A sala já está cheia!");
+          setIsJoining(false);
+          return;
+        } else {
+          const occupiedSlots = existingPlayers.map((p) =>
+            p.slot !== undefined ? p.slot : -1
+          );
+          let freeSlot = Array.from({ length: maxPlayers }, (_, i) => i).find(
+            (s) => !occupiedSlots.includes(s)
+          );
+          if (freeSlot === undefined) freeSlot = existingPlayers.length;
+
+          myId = `player_${Date.now()}`;
+          newMe = {
+            id: myId,
+            name: playerName,
+            isHost: false,
+            avatar: avatarBase64,
+            slot: freeSlot,
+          };
+          await update(ref(database, `rooms/${pinInput}/players`), {
+            [myId]: newMe,
+          });
+          await update(ref(database, `rooms/${pinInput}/roundScores`), {
+            [myId]: 0,
+          });
+          await update(ref(database, `rooms/${pinInput}/gamePoints`), {
+            [myId]: 0,
+          });
+        }
+
+        setIsSinglePlayer(false);
+        isOfflineRef.current = false;
+        setMe(newMe);
+        setRoomId(pinInput);
+      } else {
+        setErrorMsg("Sala não encontrada.");
+      }
+    } catch (e) {
+      setErrorMsg("Erro de conexão.");
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const changeSlot = (newSlot) => {
+    if (isNetworkOffline || !me || isSinglePlayer) return;
+    update(ref(database, `rooms/${roomId}/players/${me.id}`), {
+      slot: newSlot,
+    });
+    setMe((prev) => ({ ...prev, slot: newSlot }));
+  };
+
+  // CORREÇÃO: Modo Offline Totalmente Isolado da Internet
+  const startSinglePlayer = () => {
+    if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
+    const myId = `player_${Date.now()}`;
+    const newMe = {
+      id: myId,
+      name: playerName,
+      isHost: true,
+      avatar: avatarBase64,
+      slot: 0,
+    };
+
+    let bots = {};
+    let initialScores = { [myId]: 0 };
+    let initialPoints = { [myId]: 0 };
+
+    if (selectedMode === "2v2") {
+      bots = {
+        bot_1: {
+          id: "bot_1",
+          name: "Robô Esquerda",
+          isHost: false,
+          avatar: "",
+          slot: 1,
+        },
+        bot_2: {
+          id: "bot_2",
+          name: "Robô Aliado",
+          isHost: false,
+          avatar: "",
+          slot: 2,
+        },
+        bot_3: {
+          id: "bot_3",
+          name: "Robô Direita",
+          isHost: false,
+          avatar: "",
+          slot: 3,
+        },
+      };
+      initialScores = { ...initialScores, bot_1: 0, bot_2: 0, bot_3: 0 };
+      initialPoints = { ...initialPoints, bot_1: 0, bot_2: 0, bot_3: 0 };
+    } else {
+      bots = {
+        bot_1: {
+          id: "bot_1",
+          name: "Computador",
+          isHost: false,
+          avatar: "",
+          slot: 1,
+        },
+      };
+      initialScores = { ...initialScores, bot_1: 0 };
+      initialPoints = { ...initialPoints, bot_1: 0 };
+    }
+
+    setMe(newMe);
+    setIsSinglePlayer(true);
+    isOfflineRef.current = true;
+    setRoomId("SINGLE");
+
+    const initialRoomData = {
+      gameState: "choose_trump",
+      hostId: myId,
+      gameMode: selectedMode,
+      players: { [myId]: newMe, ...bots },
+      deck: createDeepShuffleDeck(),
+      tableCards: [],
+      trumpSuit: null,
+      turn: null,
+      hands: {},
+      roundScores: initialScores,
+      gamePoints: initialPoints,
+      tocoTarget: myId,
+      lives: 3,
+      trickHistory: [],
+      sweepingTo: null,
+    };
+
+    setRoomData(initialRoomData);
+    stateRef.current = initialRoomData;
+  };
+
+  useEffect(() => {
+    if (!roomId || isOfflineRef.current || isNetworkOffline) return;
+    const roomRef = ref(database, `rooms/${roomId}`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setRoomData(snapshot.val());
+      } else {
+        setErrorMsg("A sala foi fechada pelo Host.");
+        setRoomId(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [roomId, isNetworkOffline]);
+
   // ============================================================================
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
 
   const playersList = roomData?.players
-    ? Object.values(roomData.players).sort(
-        (a, b) => (a.slot || 0) - (b.slot || 0)
-      )
+    ? Object.values(roomData.players)
+        .filter(Boolean)
+        .sort((a, b) => (a.slot || 0) - (b.slot || 0))
     : [];
   const gameState = roomData?.gameState || "lobby";
   const gameMode = roomData?.gameMode || "1v1";
@@ -974,7 +1232,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
-    const currentTargetPlayer = playersList.find((p) => p.id === tocoTarget);
+    const currentTargetPlayer = playersList.find((p) => p?.id === tocoTarget);
 
     if (currentTargetPlayer && currentTargetPlayer.id !== me?.id) {
       const timer = setTimeout(() => {
@@ -988,7 +1246,11 @@ export default function App() {
 
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
-    const currentTurnIdx = playersList.findIndex((p) => p.id === turn);
+
+    // CORREÇÃO: Previne que o Bot tente jogar antes de existirem jogadores (Offline Bugfix)
+    if (!me || playersList.length === 0) return;
+
+    const currentTurnIdx = playersList.findIndex((p) => p?.id === turn);
     const bot = playersList[currentTurnIdx];
 
     if (bot && bot.id !== me?.id && tableCards.length < playersList.length) {
@@ -998,7 +1260,7 @@ export default function App() {
         const botHand = currentHands[botId] || [];
         if (botHand.length === 0) return;
 
-        const isMyTeamBot = myTeam.some((p) => p.id === botId);
+        const isMyTeamBot = myTeam.some((p) => p?.id === botId);
         const botScore = isMyTeamBot ? myTeamScore : opTeamScore;
 
         const cardToPlay = getBestCardToPlay(
@@ -1037,7 +1299,7 @@ export default function App() {
       }, 1800);
       return () => clearTimeout(timer);
     }
-  }, [turn, gameState, tableCards.length]);
+  }, [turn, gameState, tableCards.length, me, playersList, myTeam]);
 
   const createDeepShuffleDeck = () => {
     let newDeck = [];
@@ -1122,6 +1384,14 @@ export default function App() {
       }, 3000);
     }
   }, [gameState, me?.isHost]);
+
+  useEffect(() => {
+    if (gameState === "playing" && trumpSuit && tableCards.length === 0) {
+      setShowTrumpBanner(true);
+      const timer = setTimeout(() => setShowTrumpBanner(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState, trumpSuit]);
 
   const handleCardClick = (card) => {
     if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
@@ -1281,7 +1551,6 @@ export default function App() {
     }
   };
 
-  // CORREÇÃO DA MATEMÁTICA offline/ID
   const handleGameEnd = (winningTeam) => {
     const {
       tocoTarget: currentTarget,
@@ -1324,6 +1593,7 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
+
         gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
         updates = {
@@ -1469,58 +1739,6 @@ export default function App() {
                 <span className="text-xl block">Q</span> 2 pts
               </div>
             </div>
-            <p className="mt-2 text-xs text-gray-400">
-              *Cartas 6, 5, 4, 3 e 2 (fora do trunfo) são "limpas" e valem 0
-              pontos.
-            </p>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
-              ✨ O Poder do Trunfo
-            </h3>
-            <p className="mb-2">
-              Quando o naipe é o Trunfo da rodada, as cartas baixas ganham
-              superpoderes e passam a valer pontos:
-            </p>
-            <div className="grid grid-cols-5 gap-2 text-center font-bold">
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">3</span> 10 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">2</span> 10 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">4</span> 4 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">5</span> 3 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">6</span> 2 pts
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
-              ⚔️ Hierarquia de Força
-            </h3>
-            <p className="mb-1 text-xs text-gray-400">
-              Quem ganha a mão? (Da mais forte para a mais fraca)
-            </p>
-            <div className="bg-black/50 p-3 rounded-lg border border-white/5">
-              <p className="mb-2">
-                <strong className="text-white">Naipe Normal:</strong>
-                <br /> A &gt; 7 &gt; K &gt; J &gt; Q &gt; 6 &gt; 5 &gt; 4 &gt; 3
-                &gt; 2
-              </p>
-              <p>
-                <strong className="text-blue-400">No Trunfo:</strong>
-                <br /> A &gt; 3 &gt; 7 &gt; 2 &gt; K &gt; 4 &gt; J &gt; 5 &gt; Q
-                &gt; 6
-              </p>
-            </div>
           </section>
         </div>
       </div>
@@ -1558,7 +1776,6 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
-          {/* BOTÃO DA MÚSICA NAS CONFIGS */}
           <label className="flex justify-between items-center text-white font-medium">
             <span>🎵 Música de Fundo (Jazz)</span>
             <input
@@ -1568,7 +1785,6 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
-
           <label className="flex justify-between items-center text-white font-medium border-t border-white/10 pt-4">
             <span>✨ Animações de Mesa</span>
             <input
@@ -1578,9 +1794,8 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
-
           <div className="text-white font-medium pt-3 border-t border-white/10 mt-2">
-            <span className="mb-2 block">🎨 EstStyle da Mesa</span>
+            <span className="mb-2 block">🎨 Estilo da Mesa</span>
             <select
               value={settings.tableStyle || "tradicional"}
               onChange={(e) => updateSetting("tableStyle", e.target.value)}
@@ -1590,18 +1805,6 @@ export default function App() {
               <option value="taverna">Taverna (Âmbar/Madeira)</option>
               <option value="vegas">Vegas VIP (Vermelho)</option>
               <option value="noturno">Modo Noturno (Preto)</option>
-            </select>
-          </div>
-
-          <div className="text-white font-medium pt-1">
-            <span className="mb-2 block">📱 Tamanho das Cartas</span>
-            <select
-              value={settings.cardSize}
-              onChange={(e) => updateSetting("cardSize", e.target.value)}
-              className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
-            >
-              <option value="normal">Normal</option>
-              <option value="large">Grande (Mais visível)</option>
             </select>
           </div>
           <div className="text-white font-medium pt-1">
@@ -1636,9 +1839,6 @@ export default function App() {
         <h2 className="text-2xl font-black animate-pulse text-yellow-400 drop-shadow-md">
           Atualizando o Jogo...
         </h2>
-        <p className="text-sm text-gray-400 mt-2 font-medium">
-          Limpando cache e baixando a nova versão.
-        </p>
       </div>
     );
   }
@@ -1668,7 +1868,6 @@ export default function App() {
             ❓
           </button>
         </div>
-
         {showSettings && <SettingsModal />}
         {showRules && <RulesModal />}
 
@@ -1687,8 +1886,6 @@ export default function App() {
           <p className="text-yellow-500/80 text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase mb-4 drop-shadow-md text-center">
             Desenvolvido por Ryan Kilberth
           </p>
-
-          {/* BOTÃO DE ATUALIZAR EXCLUSIVO NA HOME */}
           <button
             onClick={forceUpdateGame}
             className="mb-8 text-xs font-bold text-gray-400 bg-black/40 px-4 py-2 rounded-full border border-white/10 hover:text-white hover:border-white/30 transition-all active:scale-95 shadow-md"
@@ -1698,7 +1895,7 @@ export default function App() {
 
           {isNetworkOffline && (
             <div className="w-full bg-red-600/80 text-white font-bold text-xs py-3 px-4 rounded-xl mb-4 animate-pulse text-center border border-red-400 shadow-lg">
-              ⚠️ Sem conexão. Apenas o Modo Computador está disponível.
+              ⚠️ Sem conexão. Apenas o Modo Offline está disponível.
             </div>
           )}
 
@@ -1867,7 +2064,7 @@ export default function App() {
     );
   }
 
-  // --- TELA DE AGUARDANDO JOGADOR ---
+  // --- TELA DE LOBBY ---
   if (gameState === "lobby" && !isSinglePlayer) {
     const requiredPlayers = gameMode === "2v2" ? 4 : 2;
     return (
@@ -1884,7 +2081,6 @@ export default function App() {
         >
           ⬅️
         </button>
-
         <div className="absolute top-6 right-4 md:right-6 flex flex-col items-center gap-3 z-50">
           <button
             onClick={() => setShowSettings(true)}
@@ -1893,18 +2089,8 @@ export default function App() {
           >
             ⚙️
           </button>
-          <button
-            onClick={() => setShowRules(true)}
-            className="text-2xl opacity-70 hover:opacity-100 transition-all duration-300 bg-black/40 rounded-full w-10 h-10 flex items-center justify-center border border-white/20 shadow-lg"
-            title="Como Jogar"
-          >
-            ❓
-          </button>
         </div>
-
         {showSettings && <SettingsModal />}
-        {showRules && <RulesModal />}
-
         <h1 className="text-6xl md:text-7xl font-extrabold mb-2 drop-shadow-2xl tracking-tighter flex items-center justify-center gap-3 notranslate overflow-visible">
           <span
             className="text-yellow-400 font-sans"
@@ -1922,13 +2108,11 @@ export default function App() {
             ♣
           </span>
         </h1>
-
         <div className="bg-black/60 border border-white/20 px-6 py-2 rounded-full mb-8 shadow-inner">
           <span className="text-yellow-400 font-black tracking-widest uppercase">
             Modo {gameMode}
           </span>
         </div>
-
         <div className="bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-center w-full max-w-sm shadow-2xl relative overflow-visible mb-8">
           <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black font-black px-6 py-2 rounded-full border-4 border-white shadow-lg text-lg flex items-center gap-2">
             PIN:{" "}
@@ -1939,7 +2123,6 @@ export default function App() {
           <p className="mt-6 mb-4 text-gray-300 font-bold uppercase tracking-wider text-sm">
             Jogadores na Mesa ({playersList.length}/{requiredPlayers})
           </p>
-
           {gameMode === "2v2" ? (
             <div className="flex justify-between gap-4 w-full mb-8">
               <div className="flex-1 flex flex-col items-center gap-2 bg-blue-900/30 p-3 rounded-xl border border-blue-500/30">
@@ -1971,7 +2154,6 @@ export default function App() {
               ))}
             </div>
           )}
-
           {errorMsg && (
             <p className="text-red-400 text-sm mb-4 font-bold animate-pulse text-center">
               {errorMsg}
@@ -2000,14 +2182,6 @@ export default function App() {
     gameState
   );
 
-  const myHand = hands[me?.id] || [];
-  const opponent = playersList.find((p) => p?.id !== me?.id);
-  const opHandCount = hands[opponent?.id]?.length || 0;
-
-  const myTricks = is2v2
-    ? trickHistory.filter((t) => myTeam.some((p) => p?.id === t.winnerId))
-    : trickHistory.filter((t) => t.winnerId === me?.id);
-
   // --- TELA DA MESA DE JOGO ---
   return (
     <div
@@ -2016,84 +2190,24 @@ export default function App() {
       )} flex flex-col font-sans overflow-hidden notranslate text-white relative`}
       translate="no"
     >
-      {/* KEYFRAMES VISUAIS PARA DISTRIBUIÇÃO DAS CARTAS DO CENTRO PARA AS BORDAS */}
       <style>{`
-        @keyframes deal-to-bottom {
-          0% { transform: translate(-35vw, -45vh) scale(0.2); opacity: 0; }
-          100% { transform: translate(0, 0) scale(1); opacity: 1; }
-        }
-        .animate-deal-bottom { animation: deal-to-bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards; }
-
-        @keyframes deal-to-top {
-          0% { transform: translate(-25vw, 15vh) scale(0.2); opacity: 0; }
-          100% { transform: translate(0, 0) scale(1); opacity: 1; }
-        }
-        .animate-deal-top { animation: deal-to-top 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards; }
-
-        @keyframes deal-to-left {
-          0% { transform: translate(15vw, -20vh) scale(0.2); opacity: 0; }
-          100% { transform: translate(0, 0) scale(1); opacity: 1; }
-        }
-        .animate-deal-left { animation: deal-to-left 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards; }
-
-        @keyframes deal-to-right {
-          0% { transform: translate(-70vw, -20vh) scale(0.2); opacity: 0; }
-          100% { transform: translate(0, 0) scale(1); opacity: 1; }
-        }
-        .animate-deal-right { animation: deal-to-right 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards; }
-
-        @keyframes deal-up {
-          0% { transform: translateY(150px) scale(0.5); opacity: 0; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
+        @keyframes deal-up { 0% { transform: translateY(150px) scale(0.5); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
         .animate-deal-up { animation: deal-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-        @keyframes deal-table {
-          0% { transform: translateY(-50px) scale(0.5); opacity: 0; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
+        @keyframes deal-table { 0% { transform: translateY(-50px) scale(0.5); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
         .animate-deal-table { animation: deal-table 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-        @keyframes sweep-left {
-          0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
-          100% { transform: translate(-30vw, -30vh) scale(0) rotate(-90deg); opacity: 0; }
-        }
+        @keyframes sweep-left { 0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; } 100% { transform: translate(-30vw, -30vh) scale(0) rotate(-90deg); opacity: 0; } }
         .animate-sweep-left { animation: sweep-left 0.7s ease-in forwards; }
-
-        @keyframes sweep-right {
-          0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
-          100% { transform: translate(30vw, -30vh) scale(0) rotate(90deg); opacity: 0; }
-        }
+        @keyframes sweep-right { 0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; } 100% { transform: translate(30vw, -30vh) scale(0) rotate(90deg); opacity: 0; } }
         .animate-sweep-right { animation: sweep-right 0.7s ease-in forwards; }
-
-        @keyframes screen-shake {
-          0%, 100% { transform: translate(0, 0) rotate(0deg); }
-          10% { transform: translate(-2px, -3px) rotate(-1deg); }
-          20% { transform: translate(3px, 2px) rotate(1deg); }
-          30% { transform: translate(-3px, 0px) rotate(0deg); }
-          40% { transform: translate(2px, -2px) rotate(1deg); }
-          50% { transform: translate(-1px, 3px) rotate(-1deg); }
-          60% { transform: translate(-3px, 1px) rotate(0deg); }
-          70% { transform: translate(3px, 1px) rotate(-1deg); }
-          80% { transform: translate(-1px, -1px) rotate(1deg); }
-          90% { transform: translate(1px, 2px) rotate(0deg); }
-        }
+        @keyframes screen-shake { 0%, 100% { transform: translate(0, 0) rotate(0deg); } 10% { transform: translate(-2px, -3px) rotate(-1deg); } 20% { transform: translate(3px, 2px) rotate(1deg); } 30% { transform: translate(-3px, 0px) rotate(0deg); } 40% { transform: translate(2px, -2px) rotate(1deg); } 50% { transform: translate(-1px, 3px) rotate(-1deg); } 60% { transform: translate(-3px, 1px) rotate(0deg); } 70% { transform: translate(3px, 1px) rotate(-1deg); } 80% { transform: translate(-1px, -1px) rotate(1deg); } 90% { transform: translate(1px, 2px) rotate(0deg); } }
         .animate-shake { animation: screen-shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
-
-        @keyframes heavy-card-drop {
-           0% { transform: scale(2.5); opacity: 0; filter: drop-shadow(0 0 50px rgba(250,204,21,1)); }
-           100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 20px rgba(250,204,21,0.6)); }
-        }
+        @keyframes heavy-card-drop { 0% { transform: scale(2.5); opacity: 0; filter: drop-shadow(0 0 50px rgba(250,204,21,1)); } 100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 20px rgba(250,204,21,0.6)); } }
         .animate-heavy-drop { animation: heavy-card-drop 0.3s ease-out forwards; z-index: 50; }
-
-        @keyframes fade-in-overlay {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
+        @keyframes fade-in-overlay { from { opacity: 0; } to { opacity: 1; } }
         .animate-fade-in { animation: fade-in-overlay 0.3s ease-out forwards; }
       `}</style>
 
-      {/* PLACAR UNIFICADO COM VIDAS */}
+      {/* PLACAR UNIFICADO */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-50">
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
@@ -2174,14 +2288,6 @@ export default function App() {
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
           </span>
-          {!isSinglePlayer && (
-            <span
-              className="text-[9px] md:text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
-              title="PIN da Sala"
-            >
-              {roomId}
-            </span>
-          )}
           {is2v2 && (
             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">
               2v2
@@ -2282,7 +2388,6 @@ export default function App() {
                 escolheu o trunfo:
               </span>
             </div>
-
             <div className="flex items-center justify-center gap-6 bg-gradient-to-b from-gray-800 to-black p-8 rounded-3xl border-2 border-yellow-500 shadow-[0_0_80px_rgba(234,179,8,0.5)] transform scale-110">
               <div className="w-20 h-20 md:w-28 md:h-28 bg-white rounded-full flex items-center justify-center shadow-inner">
                 <span
@@ -2295,7 +2400,6 @@ export default function App() {
                 {SUITS[trumpSuit].name}
               </span>
             </div>
-
             <div className="mt-6 flex flex-col items-center gap-2">
               <div className="flex gap-1 text-2xl">
                 {[...Array(lives)].map((_, i) => (
@@ -2353,7 +2457,11 @@ export default function App() {
         {/* RENDERIZAÇÃO 1v1 */}
         {!is2v2 && showCards && (
           <div className="absolute top-8 md:top-12 flex -space-x-4 md:-space-x-6 transition-all duration-500 hover:-space-x-2 z-10">
-            {Array.from({ length: opHandCount }).map((_, i) => (
+            {Array.from({
+              length:
+                hands[playersList.find((p) => p?.id !== me?.id)?.id]?.length ||
+                0,
+            }).map((_, i) => (
               <CardBack key={i} settings={settings} />
             ))}
           </div>
@@ -2372,7 +2480,6 @@ export default function App() {
             settings={settings}
           />
         )}
-
         {is2v2 && showCards && leftPlayer && (
           <EdgePlayer
             player={leftPlayer}
@@ -2385,7 +2492,6 @@ export default function App() {
             settings={settings}
           />
         )}
-
         {is2v2 && showCards && rightPlayer && (
           <EdgePlayer
             player={rightPlayer}
@@ -2423,8 +2529,6 @@ export default function App() {
               <div className="absolute -bottom-2 -right-2 bg-red-600 text-[10px] text-white font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white shadow">
                 {deck.length}
               </div>
-
-              {/* TRUNFO NO TOPO DO MONTE */}
               {trumpSuit && (
                 <div
                   className={`absolute -top-4 -right-4 md:-top-6 md:-right-6 ${
@@ -2518,7 +2622,6 @@ export default function App() {
       <div className="bg-gradient-to-t from-black/95 to-transparent pb-8 pt-4 w-full flex flex-col items-center relative z-10">
         {showCards && (
           <>
-            {/* BOTÃO DA PILHA E AVATAR COM ANIMAÇÃO SLIDE DOWN DO DECK */}
             <div
               className={`absolute left-4 ${
                 is2v2
@@ -2535,13 +2638,12 @@ export default function App() {
                   Mãos ({myTricks.length})
                 </span>
               </button>
-
               {is2v2 && (
                 <div className="flex flex-col items-center gap-1">
                   <PlayerAvatar
                     src={me?.avatar}
                     name={playerName}
-                    size="sm"
+                    size="md"
                     isTurn={turn === me?.id}
                     isOpponent={false}
                   />
@@ -2589,17 +2691,16 @@ export default function App() {
           )}
         </div>
 
-        {/* SUA MÃO: DESLIZA DO BARALHO USANDO O NOVO SELETOR (deal-to-bottom) */}
         <div className="flex -space-x-3 md:space-x-4 px-4 h-32 md:h-44 items-end pb-2 overflow-visible">
           {showCards &&
-            myHand.map((card, index) => (
+            (hands[me?.id] || []).map((card, index) => (
               <div
                 key={card.id}
                 className={`transition-transform duration-200 hover:-translate-y-6 hover:z-20 overflow-visible ${
-                  settings.animations ? "animate-deal-bottom" : ""
+                  settings.animations ?? true ? "animate-deal-up" : ""
                 }`}
                 style={{
-                  animationDelay: `${index * 0.08}s`,
+                  animationDelay: `${index * 0.1}s`,
                   animationFillMode: "backwards",
                 }}
               >
