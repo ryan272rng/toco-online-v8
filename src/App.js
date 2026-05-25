@@ -6,6 +6,7 @@ import { ref, onValue, set, update, get } from "firebase/database";
 // 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
+// MOTOR DE ÁUDIO GLOBAL OTIMIZADO
 let globalAudioCtx = null;
 const initAudio = () => {
   if (!globalAudioCtx) {
@@ -18,7 +19,103 @@ const initAudio = () => {
   return globalAudioCtx;
 };
 
-const CardFanIcon = () => <span className="text-2xl drop-shadow-md">🎴</span>;
+const CardFanIcon = () => (
+  <svg
+    width="34"
+    height="34"
+    viewBox="-2 -2 38 38"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className="drop-shadow-lg opacity-90 mb-1"
+  >
+    <rect
+      x="2"
+      y="2.5"
+      width="16"
+      height="23"
+      rx="3"
+      fill="white"
+      stroke="#D1D5DB"
+      strokeWidth="1.5"
+    />
+    <text
+      x="4"
+      y="9"
+      fill="#DC2626"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
+    >
+      ♥
+    </text>
+    <rect
+      x="0"
+      y="4.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(-15 0 4.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      strokeWidth="1.5"
+    />
+    <text
+      x="1"
+      y="9"
+      fill="#111827"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
+      transform="rotate(-15 1 9)"
+    >
+      ♣
+    </text>
+    <rect
+      x="12"
+      y="2.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(15 12 2.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      strokeWidth="1.5"
+    />
+    <text
+      x="13"
+      y="8"
+      fill="#DC2626"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
+      transform="rotate(15 13 8)"
+    >
+      ♦
+    </text>
+    <rect
+      x="18"
+      y="4.5"
+      width="16"
+      height="23"
+      rx="3"
+      transform="rotate(30 18 4.5)"
+      fill="white"
+      stroke="#D1D5DB"
+      strokeWidth="1.5"
+    />
+    <text
+      x="19"
+      y="11"
+      fill="#111827"
+      fontFamily="sans-serif"
+      fontSize="5"
+      fontWeight="bold"
+      transform="rotate(30 19 11)"
+    >
+      ♠
+    </text>
+  </svg>
+);
 
 const SUITS = {
   hearts: {
@@ -101,6 +198,7 @@ const PlayerAvatar = ({ src, name = "", size = "md", isTurn, isOpponent }) => {
         ? "ring-4 ring-red-500 shadow-[0_0_20px_rgba(239,68,68,0.9)]"
         : "ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.9)]"
       : "border-2 border-white/30 shadow-lg";
+
     if (isTurn) turnScale = "scale-125 z-20";
   }
 
@@ -410,20 +508,28 @@ const EdgePlayer = ({
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS GERAIS E CONFIGURAÇÕES
+  // 2. ESTADOS GERAIS E CONFIGURAÇÕES BLINDADOS (Try/Catch no LocalStorage)
   // ============================================================================
-  const [playerName, setPlayerName] = useState(
-    () => localStorage.getItem("tocoPlayerName") || ""
-  );
+  const [playerName, setPlayerName] = useState(() => {
+    try {
+      return localStorage.getItem("tocoPlayerName") || "";
+    } catch (e) {
+      return "";
+    }
+  });
   const [pinInput, setPinInput] = useState("");
   const [roomId, setRoomId] = useState(null);
   const [me, setMe] = useState(null);
   const [roomData, setRoomData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [avatarBase64, setAvatarBase64] = useState(
-    () => localStorage.getItem("tocoPlayerAvatar") || ""
-  );
+  const [avatarBase64, setAvatarBase64] = useState(() => {
+    try {
+      return localStorage.getItem("tocoPlayerAvatar") || "";
+    } catch (e) {
+      return "";
+    }
+  });
   const [isSinglePlayer, setIsSinglePlayer] = useState(false);
 
   const [homeTab, setHomeTab] = useState("entrar");
@@ -449,18 +555,30 @@ export default function App() {
   const activeBgmNodesRef = useRef([]);
 
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem("tocoSettings");
-    return saved
-      ? JSON.parse(saved)
-      : {
-          sound: true,
-          showHints: true,
-          deckStyle: "default",
-          cardSize: "normal",
-          animations: true,
-          tableStyle: "tradicional",
-          bgm: true,
-        };
+    try {
+      const saved = localStorage.getItem("tocoSettings");
+      return saved
+        ? JSON.parse(saved)
+        : {
+            sound: true,
+            showHints: true,
+            deckStyle: "default",
+            cardSize: "normal",
+            animations: true,
+            tableStyle: "tradicional",
+            bgm: true,
+          };
+    } catch (e) {
+      return {
+        sound: true,
+        showHints: true,
+        deckStyle: "default",
+        cardSize: "normal",
+        animations: true,
+        tableStyle: "tradicional",
+        bgm: true,
+      };
+    }
   });
 
   useEffect(() => {
@@ -475,11 +593,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("tocoSettings", JSON.stringify(settings));
+    try {
+      localStorage.setItem("tocoSettings", JSON.stringify(settings));
+    } catch (e) {}
   }, [settings]);
 
   useEffect(() => {
-    if (playerName.trim()) localStorage.setItem("tocoPlayerName", playerName);
+    try {
+      if (playerName.trim()) localStorage.setItem("tocoPlayerName", playerName);
+    } catch (e) {}
   }, [playerName]);
 
   // ============================================================================
@@ -570,12 +692,16 @@ export default function App() {
   const forceUpdateGame = async () => {
     setIsUpdating(true);
     if ("serviceWorker" in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (let registration of registrations) await registration.unregister();
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let registration of registrations) await registration.unregister();
+      } catch (e) {}
     }
     if ("caches" in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((key) => caches.delete(key)));
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      } catch (e) {}
     }
     setTimeout(() => {
       window.location.href = window.location.href.split("#")[0];
@@ -610,7 +736,9 @@ export default function App() {
         ctx.drawImage(img, 0, 0, width, height);
         const compressedBase64 = canvas.toDataURL("image/jpeg", 0.95);
         setAvatarBase64(compressedBase64);
-        localStorage.setItem("tocoPlayerAvatar", compressedBase64);
+        try {
+          localStorage.setItem("tocoPlayerAvatar", compressedBase64);
+        } catch (e) {}
       };
       img.src = event.target.result;
     };
@@ -786,7 +914,9 @@ export default function App() {
         const currentRoomData = snapshot.val();
         const existingPlayers = Object.values(currentRoomData.players || {});
         const matchedPlayer = existingPlayers.find(
-          (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
+          (p) =>
+            String(p?.name || "").toLowerCase() ===
+            playerName.trim().toLowerCase()
         );
 
         const maxPlayers = currentRoomData.gameMode === "2v2" ? 4 : 2;
@@ -807,7 +937,7 @@ export default function App() {
           return;
         } else {
           const occupiedSlots = existingPlayers.map((p) =>
-            p.slot !== undefined ? p.slot : -1
+            p?.slot !== undefined ? p.slot : -1
           );
           let freeSlot = Array.from({ length: maxPlayers }, (_, i) => i).find(
             (s) => !occupiedSlots.includes(s)
@@ -855,7 +985,7 @@ export default function App() {
     setMe((prev) => ({ ...prev, slot: newSlot }));
   };
 
-  // CORREÇÃO: Modo Offline Totalmente Isolado da Internet
+  // CORREÇÃO: Modo Offline Blindado (Não depende de leitura externa, inicia com valores puros)
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
@@ -956,6 +1086,7 @@ export default function App() {
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
 
+  // LISTAS BLINDADAS PARA EVITAR TELA BRANCA
   const playersList = roomData?.players
     ? Object.values(roomData.players)
         .filter(Boolean)
@@ -1230,8 +1361,11 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
+  // CORREÇÃO: O Bot agora só escolhe o trunfo se o jogador HUMANO já estiver completamente renderizado
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
+    if (!me) return;
+
     const currentTargetPlayer = playersList.find((p) => p?.id === tocoTarget);
 
     if (currentTargetPlayer && currentTargetPlayer.id !== me?.id) {
@@ -1242,12 +1376,10 @@ export default function App() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, tocoTarget, playersList, me?.id]);
+  }, [gameState, tocoTarget, playersList, me]);
 
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
-
-    // CORREÇÃO: Previne que o Bot tente jogar antes de existirem jogadores (Offline Bugfix)
     if (!me || playersList.length === 0) return;
 
     const currentTurnIdx = playersList.findIndex((p) => p?.id === turn);
@@ -1593,7 +1725,6 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
-
         gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
         let partnerIdx = (currentTargetIdx + 2) % playersList.length;
         updates = {
@@ -1785,6 +1916,7 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
+
           <label className="flex justify-between items-center text-white font-medium border-t border-white/10 pt-4">
             <span>✨ Animações de Mesa</span>
             <input
@@ -1794,6 +1926,7 @@ export default function App() {
               className="w-6 h-6 accent-yellow-500"
             />
           </label>
+
           <div className="text-white font-medium pt-3 border-t border-white/10 mt-2">
             <span className="mb-2 block">🎨 Estilo da Mesa</span>
             <select
@@ -1805,6 +1938,18 @@ export default function App() {
               <option value="taverna">Taverna (Âmbar/Madeira)</option>
               <option value="vegas">Vegas VIP (Vermelho)</option>
               <option value="noturno">Modo Noturno (Preto)</option>
+            </select>
+          </div>
+
+          <div className="text-white font-medium pt-1">
+            <span className="mb-2 block">📱 Tamanho das Cartas</span>
+            <select
+              value={settings.cardSize}
+              onChange={(e) => updateSetting("cardSize", e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded p-2 text-sm focus:border-yellow-500 text-white"
+            >
+              <option value="normal">Normal</option>
+              <option value="large">Grande (Mais visível)</option>
             </select>
           </div>
           <div className="text-white font-medium pt-1">
@@ -2064,7 +2209,7 @@ export default function App() {
     );
   }
 
-  // --- TELA DE LOBBY ---
+  // --- TELA DE AGUARDANDO JOGADOR ---
   if (gameState === "lobby" && !isSinglePlayer) {
     const requiredPlayers = gameMode === "2v2" ? 4 : 2;
     return (
@@ -2288,6 +2433,14 @@ export default function App() {
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
           </span>
+          {!isSinglePlayer && (
+            <span
+              className="text-[9px] md:text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
+              title="PIN da Sala"
+            >
+              {roomId}
+            </span>
+          )}
           {is2v2 && (
             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">
               2v2
@@ -2379,12 +2532,13 @@ export default function App() {
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-full border border-white/20 shadow-lg">
               <PlayerAvatar
-                src={playersList.find((p) => p.id === tocoTarget)?.avatar}
-                name={playersList.find((p) => p.id === tocoTarget)?.name}
+                src={playersList.find((p) => p?.id === tocoTarget)?.avatar}
+                name={playersList.find((p) => p?.id === tocoTarget)?.name}
                 size="sm"
               />
               <span className="text-white font-bold uppercase tracking-widest text-sm md:text-base">
-                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}{" "}
+                {playersList.find((p) => p?.id === tocoTarget)?.name ||
+                  "Alguém"}{" "}
                 escolheu o trunfo:
               </span>
             </div>
@@ -2595,7 +2749,7 @@ export default function App() {
                     trumpSuit={trumpSuit}
                   />
                   <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                    {playersList.find((p) => p.id === tc.playerId)?.name ||
+                    {playersList.find((p) => p?.id === tc.playerId)?.name ||
                       "Robô"}
                   </span>
                 </div>
@@ -2755,7 +2909,8 @@ export default function App() {
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-yellow-400 mb-2 drop-shadow">
                 Aguardando{" "}
-                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}
+                {playersList.find((p) => p?.id === tocoTarget)?.name ||
+                  "Alguém"}
                 ...
               </h2>
               <p className="text-gray-300 text-sm font-medium">
