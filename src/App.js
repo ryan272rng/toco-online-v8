@@ -175,15 +175,6 @@ const getTableBg = (style) =>
     TABLE_STYLES[style] || TABLE_STYLES.tradicional
   }`;
 
-// NOVAS FALAS ESTRATÉGICAS
-const CHAT_PHRASES = [
-  "Corta! ✂️",
-  "Bisca! 🃏",
-  "Demorou, hein! ⏳",
-  "Sorte de principiante! 🍀",
-  "Toma essa! 💥",
-];
-
 // ============================================================================
 // COMPONENTES VISUAIS ISOLADOS
 // ============================================================================
@@ -408,7 +399,7 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
-// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2) - SEM CHAT INTERNO
+// COMPONENTE: Oponente na Borda da Mesa (Exclusivo 2v2)
 const EdgePlayer = ({
   player,
   handCount,
@@ -420,6 +411,7 @@ const EdgePlayer = ({
   settings,
 }) => {
   if (!player) return null;
+  const isTarget = tocoTarget === player.id;
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
@@ -542,12 +534,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
 
-  const [showEmotes, setShowEmotes] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [activeReaction, setActiveReaction] = useState(null);
-  const [activeChatMessage, setActiveChatMessage] = useState(null);
   const [isShaking, setIsShaking] = useState(false);
-
   const [showTrumpBanner, setShowTrumpBanner] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
@@ -589,23 +576,6 @@ export default function App() {
     if (playerName.trim()) localStorage.setItem("tocoPlayerName", playerName);
   }, [playerName]);
 
-  // SINCRONIZAÇÃO VISUAL INDEPENDENTE (Evita sumir a mensagem rápido demais nos outros celulares)
-  useEffect(() => {
-    if (roomData?.currentReaction?.ts) {
-      setActiveReaction(roomData.currentReaction.emoji);
-      const timer = setTimeout(() => setActiveReaction(null), 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [roomData?.currentReaction?.ts]);
-
-  useEffect(() => {
-    if (roomData?.currentMessage?.ts) {
-      setActiveChatMessage(roomData.currentMessage);
-      const timer = setTimeout(() => setActiveChatMessage(null), 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [roomData?.currentMessage?.ts, roomData?.currentMessage?.text]);
-
   const updateSetting = (key, value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
   const toggleSetting = (key) =>
@@ -636,7 +606,7 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_SIZE = 800; // Super Alta Resolução
+        const MAX_SIZE = 800;
         let width = img.width;
         let height = img.height;
         if (width > height) {
@@ -663,7 +633,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // CORREÇÃO: Limpador automático de Memória do Áudio para parar travamentos
   const playSoundEffect = (type) => {
     if (!settings.sound) return;
     try {
@@ -801,9 +770,7 @@ export default function App() {
       tocoTarget: null,
       lives: 3,
       trickHistory: [],
-      currentReaction: null,
       sweepingTo: null,
-      currentMessage: null,
     };
 
     try {
@@ -968,25 +935,11 @@ export default function App() {
       tocoTarget: myId,
       lives: 3,
       trickHistory: [],
-      currentReaction: null,
       sweepingTo: null,
-      currentMessage: null,
     };
 
     setRoomData(initialRoomData);
     stateRef.current = initialRoomData;
-  };
-
-  const sendEmote = (emoji) => {
-    if (isNetworkOffline && !isSinglePlayer) return;
-    syncState({ currentReaction: { emoji, senderId: me.id, ts: Date.now() } });
-    setShowEmotes(false);
-  };
-
-  const sendChatMessage = (text) => {
-    if (isNetworkOffline && !isSinglePlayer) return;
-    syncState({ currentMessage: { text, senderId: me.id, ts: Date.now() } });
-    setShowChat(false);
   };
 
   useEffect(() => {
@@ -1548,7 +1501,6 @@ export default function App() {
       cards: validCards.map((c) => c.card),
     };
 
-    // CARTAS PUXAM SEMPRE PARA O LADO CERTO DO VENCEDOR
     const destinationId = isMyTeamWin ? me?.id : opTeam[0]?.id;
 
     syncState({
@@ -2324,22 +2276,6 @@ export default function App() {
       translate="no"
     >
       <style>{`
-        @keyframes float-emoji {
-          0% { opacity: 0; transform: translateY(50px) scale(0.5); }
-          15% { opacity: 1; transform: translateY(0px) scale(1.5); }
-          85% { opacity: 1; transform: translateY(-20px) scale(1.5); }
-          100% { opacity: 0; transform: translateY(-100px) scale(0.8); }
-        }
-        .animate-emoji { animation: float-emoji 2.5s ease-out forwards; }
-
-        @keyframes chat-bubble {
-          0% { opacity: 0; transform: scale(0.8) translateY(-10px); }
-          10% { opacity: 1; transform: scale(1) translateY(0); }
-          90% { opacity: 1; transform: scale(1) translateY(0); }
-          100% { opacity: 0; transform: scale(0.8) translateY(10px); }
-        }
-        .animate-chat { animation: chat-bubble 3.5s ease-in-out forwards; }
-
         @keyframes deal-up {
           0% { transform: translateY(150px) scale(0.5); opacity: 0; }
           100% { transform: translateY(0) scale(1); opacity: 1; }
@@ -2391,53 +2327,7 @@ export default function App() {
         .animate-fade-in { animation: fade-in-overlay 0.3s ease-out forwards; }
       `}</style>
 
-      {/* CHAT BUBBLES GLOBAIS (Garante que nunca serão cortados pelo overflow) */}
-      {activeChatMessage && (
-        <>
-          {/* Eu */}
-          {activeChatMessage.senderId === me?.id && (
-            <div className="pointer-events-none absolute bottom-44 left-1/2 -translate-x-1/2 z-[999] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-blue-200 animate-chat whitespace-nowrap">
-              Você: {activeChatMessage.text}
-            </div>
-          )}
-
-          {/* Oponente 1v1 */}
-          {!is2v2 && activeChatMessage.senderId === playersList[1]?.id && (
-            <div className="pointer-events-none absolute top-32 left-1/2 -translate-x-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
-              {playersList[1]?.name}: {activeChatMessage.text}
-            </div>
-          )}
-
-          {/* Parceiro Topo (2v2) */}
-          {is2v2 &&
-            topPlayer &&
-            activeChatMessage.senderId === topPlayer.id && (
-              <div className="pointer-events-none absolute top-32 left-1/2 -translate-x-1/2 z-[999] bg-white text-blue-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-blue-200 animate-chat whitespace-nowrap">
-                {topPlayer.name}: {activeChatMessage.text}
-              </div>
-            )}
-
-          {/* Oponente Esquerda (2v2) */}
-          {is2v2 &&
-            leftPlayer &&
-            activeChatMessage.senderId === leftPlayer.id && (
-              <div className="pointer-events-none absolute top-1/2 left-28 -translate-y-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
-                {leftPlayer.name}: {activeChatMessage.text}
-              </div>
-            )}
-
-          {/* Oponente Direita (2v2) */}
-          {is2v2 &&
-            rightPlayer &&
-            activeChatMessage.senderId === rightPlayer.id && (
-              <div className="pointer-events-none absolute top-1/2 right-28 -translate-y-1/2 z-[999] bg-white text-red-900 font-black text-sm px-6 py-3 rounded-3xl shadow-2xl border-2 border-red-200 animate-chat whitespace-nowrap">
-                {rightPlayer.name}: {activeChatMessage.text}
-              </div>
-            )}
-        </>
-      )}
-
-      {/* PLACAR UNIFICADO COM VIDAS */}
+      {/* PLACAR UNIFICADO */}
       <div className="grid grid-cols-[1fr_auto_1fr] w-full h-24 bg-black/30 backdrop-blur-md border-b border-white/10 shadow-2xl relative z-50">
         <div
           className={`flex flex-col justify-center px-3 md:px-4 border-r border-white/10 overflow-hidden ${
@@ -2491,7 +2381,6 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-end gap-0.5">
-              {/* NOVA CONTAGEM DE MÃOS (Vidas) */}
               {((!is2v2 && tocoTarget === playersList[0]?.id) ||
                 (is2v2 && myTeam.some((p) => p?.id === tocoTarget))) && (
                 <div className="bg-black/50 px-2 py-1 rounded-full flex gap-1 items-center mt-1 border border-white/10">
@@ -2588,7 +2477,6 @@ export default function App() {
               </span>
             </span>
             <div className="flex flex-col items-start gap-0.5">
-              {/* NOVA CONTAGEM DE MÃOS (Vidas) */}
               {((!is2v2 && tocoTarget === playersList[1]?.id) ||
                 (is2v2 && opTeam.some((p) => p?.id === tocoTarget))) && (
                 <div className="bg-black/50 px-2 py-1 rounded-full flex gap-1 items-center mt-1 border border-white/10 flex-row-reverse">
@@ -2612,14 +2500,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
-      {activeReaction && (
-        <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-[150]">
-          <div className="text-[120px] md:text-[160px] animate-emoji drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] filter">
-            {activeReaction}
-          </div>
-        </div>
-      )}
 
       {/* OVERLAY DE ANÚNCIO DE TRUNFO 3s */}
       {gameState === "announcing_trump" && trumpSuit && (
@@ -2685,23 +2565,6 @@ export default function App() {
 
       {showSettings && <SettingsModal />}
       {showRules && <RulesModal />}
-
-      {/* BALÃO DE DICAS (In-clicável) */}
-      {currentHint && (
-        <div className="absolute bottom-40 md:bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm pointer-events-none">
-          <div className="bg-blue-900/95 backdrop-blur-md border-2 border-blue-400 p-4 rounded-2xl shadow-2xl animate-fade-in text-center relative pointer-events-auto">
-            <button
-              onClick={() => setCurrentHint(null)}
-              className="absolute -top-2 -right-2 bg-red-500 w-6 h-6 rounded-full text-xs font-bold shadow border border-white z-50 cursor-pointer"
-            >
-              X
-            </button>
-            <p className="text-sm md:text-base font-medium text-white leading-tight">
-              {currentHint.text}
-            </p>
-          </div>
-        </div>
-      )}
 
       <div className="flex-1 flex flex-col items-center justify-center relative w-full mt-4">
         {/* RENDERIZAÇÃO 1v1 */}
@@ -2799,16 +2662,16 @@ export default function App() {
           )}
         </div>
 
-        {/* ÁREA DA MESA COM CARTAS JOGADAS */}
+        {/* ÁREA DA MESA COM CARTAS JOGADAS (SOMENTE ESTA DIV PODE TREMER) */}
         <div
           className={`relative flex flex-col items-center justify-center w-full ${
             is2v2
               ? "translate-y-12 md:translate-y-16"
               : "translate-y-6 md:translate-y-12"
-          }`}
+          } ${isShaking ? "animate-shake" : ""}`}
         >
           <div
-            className={`${isShaking ? "animate-shake" : ""} ${
+            className={`${
               is2v2
                 ? "grid grid-cols-2 gap-x-8 gap-y-4"
                 : "flex gap-4 md:gap-8 flex-wrap"
@@ -2901,75 +2764,6 @@ export default function App() {
               )}
             </div>
 
-            {!isSinglePlayer && (
-              <div className="absolute right-4 bottom-48 md:bottom-20 z-40 flex flex-col items-end gap-2">
-                {showEmotes && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-xl items-center">
-                    <button
-                      onClick={() => sendEmote("🤣")}
-                      className="text-2xl hover:scale-125 transition-transform"
-                    >
-                      🤣
-                    </button>
-                    <button
-                      onClick={() => sendEmote("😡")}
-                      className="text-2xl hover:scale-125 transition-transform"
-                    >
-                      😡
-                    </button>
-                    <button
-                      onClick={() => sendEmote("😭")}
-                      className="text-2xl hover:scale-125 transition-transform"
-                    >
-                      😭
-                    </button>
-                    <button
-                      onClick={() => sendEmote("🤡")}
-                      className="text-2xl hover:scale-125 transition-transform"
-                    >
-                      🤡
-                    </button>
-                  </div>
-                )}
-                {showChat && (
-                  <div className="flex flex-col gap-2 mb-2 bg-black/80 backdrop-blur-md p-3 rounded-2xl border border-white/20 shadow-xl items-end text-sm z-50">
-                    {CHAT_PHRASES.map((phrase) => (
-                      <button
-                        key={phrase}
-                        onClick={() => sendChatMessage(phrase)}
-                        className="text-white hover:text-yellow-400 text-right whitespace-nowrap font-medium py-1 transition-colors"
-                      >
-                        {phrase}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      setShowChat(!showChat);
-                      setShowEmotes(false);
-                    }}
-                    className="text-2xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
-                    title="Chat Rápido"
-                  >
-                    💬
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowEmotes(!showEmotes);
-                      setShowChat(false);
-                    }}
-                    className="text-3xl opacity-80 hover:opacity-100 transition-opacity active:scale-90 bg-black/40 rounded-full w-12 h-12 flex items-center justify-center border border-white/10 shadow-lg z-40"
-                    title="Reagir"
-                  >
-                    😀
-                  </button>
-                </div>
-              </div>
-            )}
-
             {turn === me?.id &&
               settings.showHints &&
               gameState !== "announcing_trump" && (
@@ -2977,7 +2771,7 @@ export default function App() {
                   className={`absolute right-4 ${
                     !isSinglePlayer
                       ? "bottom-[260px] md:bottom-36"
-                      : "bottom-48 md:bottom-20"
+                      : "bottom-32 md:bottom-20"
                   } z-40 transition-all`}
                 >
                   <button
