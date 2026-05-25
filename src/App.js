@@ -1,17 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
-import { ref, onValue, set, update, get } from "firebase/database";
-// RESTAURADO PARA EVITAR TELA BRANCA NO CODESANDBOX
-import {
-  insertCoin,
-  myPlayer,
-  isHost,
-  useMultiplayerState,
-  usePlayersList,
-} from "playroomkit";
+import { ref, onValue, update, get, set } from "firebase/database";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (SEM BIBLIOTECAS EXTERNAS PESADAS)
 // ============================================================================
 
 // MOTOR DE ÁUDIO GLOBAL OTIMIZADO
@@ -238,7 +230,7 @@ const CardFace = ({
   settings,
 }) => {
   const { deckStyle, cardSize } = settings;
-  const suitDef = SUITS[card.suit];
+  const suitDef = SUITS[card.suit] || SUITS.spades; // Proteção extra contra quebra de renderização
   const isTrump = card.suit === trumpSuit;
   const opacityClass =
     localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
@@ -351,7 +343,7 @@ const CardFace = ({
 
 const MiniCard = ({ card, settings }) => {
   const { deckStyle } = settings;
-  const suitDef = SUITS[card.suit];
+  const suitDef = SUITS[card.suit] || SUITS.spades;
   let textColor = suitDef.defaultColor;
   let bgClass = "bg-white border-gray-300";
   if (deckStyle === "dark") {
@@ -408,6 +400,7 @@ const CardBack = ({ settings, isMini = false }) => {
   );
 };
 
+// COMPONENTE: Oponente na Borda da Mesa
 const EdgePlayer = ({
   player,
   handCount,
@@ -516,7 +509,7 @@ const EdgePlayer = ({
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS GERAIS E CONFIGURAÇÕES
+  // 2. ESTADOS GERAIS E CONFIGURAÇÕES BLINDADOS (Try/Catch no LocalStorage)
   // ============================================================================
   const [playerName, setPlayerName] = useState(() => {
     try {
@@ -833,7 +826,7 @@ export default function App() {
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. LÓGICA DE REDE E RECONEXÃO
+  // 3. LÓGICA DE REDE E RECONEXÃO BLINDADA
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -993,6 +986,7 @@ export default function App() {
     setMe((prev) => ({ ...prev, slot: newSlot }));
   };
 
+  // CORREÇÃO MÁXIMA: Modo Offline Blindado
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
@@ -1093,6 +1087,7 @@ export default function App() {
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
 
+  // LISTAS BLINDADAS PARA EVITAR TELA BRANCA
   const playersList = roomData?.players
     ? Object.values(roomData.players)
         .filter(Boolean)
@@ -1367,9 +1362,10 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
+  // BOT ESCOLHE TRUNFO (BLINDADO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
-    if (!me || playersList.length === 0) return;
+    if (!me || playersList.length === 0) return; // TRAVA DE SEGURANÇA
 
     const currentTargetPlayer = playersList.find((p) => p?.id === tocoTarget);
 
@@ -1383,9 +1379,10 @@ export default function App() {
     }
   }, [gameState, tocoTarget, playersList, me]);
 
+  // BOT JOGA CARTA (BLINDADO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
-    if (!me || playersList.length === 0) return;
+    if (!me || playersList.length === 0) return; // TRAVA DE SEGURANÇA
 
     const currentTurnIdx = playersList.findIndex((p) => p?.id === turn);
     const bot = playersList[currentTurnIdx];
@@ -1529,12 +1526,14 @@ export default function App() {
     setLocalProcessing(false);
   };
 
+  // DEALING EFEITO (BLINDADO CONTRA DECK VAZIO)
   useEffect(() => {
     if (me?.isHost && gameState === "dealing" && roomData) {
-      const currentDeck = [...roomData.deck];
+      const currentDeck = [...(roomData.deck || [])];
       const newHands = {};
       playersList.forEach((p, index) => {
-        newHands[p.id] = currentDeck.slice(index * 4, (index + 1) * 4);
+        if (p?.id)
+          newHands[p.id] = currentDeck.slice(index * 4, (index + 1) * 4);
       });
       const remaining = currentDeck.slice(playersList.length * 4);
 
@@ -1959,58 +1958,6 @@ export default function App() {
               <div className="bg-white/10 rounded p-2">
                 <span className="text-xl block">Q</span> 2 pts
               </div>
-            </div>
-            <p className="mt-2 text-xs text-gray-400">
-              *Cartas 6, 5, 4, 3 e 2 (fora do trunfo) são "limpas" e valem 0
-              pontos.
-            </p>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
-              ✨ O Poder do Trunfo
-            </h3>
-            <p className="mb-2">
-              Quando o naipe é o Trunfo da rodada, as cartas baixas ganham
-              superpoderes e passam a valer pontos:
-            </p>
-            <div className="grid grid-cols-5 gap-2 text-center font-bold">
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">3</span> 10 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">2</span> 10 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">4</span> 4 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">5</span> 3 pts
-              </div>
-              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
-                <span className="text-xl block text-blue-400">6</span> 2 pts
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
-              ⚔️ Hierarquia de Força
-            </h3>
-            <p className="mb-1 text-xs text-gray-400">
-              Quem ganha a mão? (Da mais forte para a mais fraca)
-            </p>
-            <div className="bg-black/50 p-3 rounded-lg border border-white/5">
-              <p className="mb-2">
-                <strong className="text-white">Naipe Normal:</strong>
-                <br /> A &gt; 7 &gt; K &gt; J &gt; Q &gt; 6 &gt; 5 &gt; 4 &gt; 3
-                &gt; 2
-              </p>
-              <p>
-                <strong className="text-blue-400">No Trunfo:</strong>
-                <br /> A &gt; 3 &gt; 7 &gt; 2 &gt; K &gt; 4 &gt; J &gt; 5 &gt; Q
-                &gt; 6
-              </p>
             </div>
           </section>
         </div>
@@ -2674,25 +2621,28 @@ export default function App() {
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-full border border-white/20 shadow-lg">
               <PlayerAvatar
-                src={playersList.find((p) => p.id === tocoTarget)?.avatar}
-                name={playersList.find((p) => p.id === tocoTarget)?.name}
+                src={playersList.find((p) => p?.id === tocoTarget)?.avatar}
+                name={playersList.find((p) => p?.id === tocoTarget)?.name}
                 size="sm"
               />
               <span className="text-white font-bold uppercase tracking-widest text-sm md:text-base">
-                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}{" "}
+                {playersList.find((p) => p?.id === tocoTarget)?.name ||
+                  "Alguém"}{" "}
                 escolheu o trunfo:
               </span>
             </div>
             <div className="flex items-center justify-center gap-6 bg-gradient-to-b from-gray-800 to-black p-8 rounded-3xl border-2 border-yellow-500 shadow-[0_0_80px_rgba(234,179,8,0.5)] transform scale-110">
               <div className="w-20 h-20 md:w-28 md:h-28 bg-white rounded-full flex items-center justify-center shadow-inner">
                 <span
-                  className={`text-6xl md:text-8xl font-sans ${SUITS[trumpSuit].defaultColor}`}
+                  className={`text-6xl md:text-8xl font-sans ${
+                    SUITS[trumpSuit]?.defaultColor || "text-white"
+                  }`}
                 >
-                  {SUITS[trumpSuit].symbol}
+                  {SUITS[trumpSuit]?.symbol || "♠"}
                 </span>
               </div>
               <span className="text-4xl md:text-6xl font-black text-yellow-400 uppercase tracking-widest drop-shadow-lg">
-                {SUITS[trumpSuit].name}
+                {SUITS[trumpSuit]?.name || "Desconhecido"}
               </span>
             </div>
             <div className="mt-6 flex flex-col items-center gap-2">
@@ -2835,9 +2785,11 @@ export default function App() {
                   } shadow-[0_0_20px_rgba(250,204,21,0.8)] transition-transform hover:scale-110 z-10`}
                 >
                   <span
-                    className={`${SUITS[trumpSuit].defaultColor} font-sans`}
+                    className={`${
+                      SUITS[trumpSuit]?.defaultColor || "text-white"
+                    } font-sans`}
                   >
-                    {SUITS[trumpSuit].symbol}
+                    {SUITS[trumpSuit]?.symbol || "♠"}
                   </span>
                 </div>
               )}
@@ -2890,7 +2842,7 @@ export default function App() {
                     trumpSuit={trumpSuit}
                   />
                   <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                    {playersList.find((p) => p.id === tc.playerId)?.name ||
+                    {playersList.find((p) => p?.id === tc.playerId)?.name ||
                       "Robô"}
                   </span>
                 </div>
@@ -3050,7 +3002,8 @@ export default function App() {
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-yellow-400 mb-2 drop-shadow">
                 Aguardando{" "}
-                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}
+                {playersList.find((p) => p?.id === tocoTarget)?.name ||
+                  "Alguém"}
                 ...
               </h2>
               <p className="text-gray-300 text-sm font-medium">
