@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
-import { ref, onValue, set, update, get } from "firebase/database";
+import { ref, onValue, update, get, set } from "firebase/database";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (SEM BIBLIOTECAS FANTASMAS)
 // ============================================================================
 
 // MOTOR DE ÁUDIO GLOBAL OTIMIZADO
@@ -343,7 +343,7 @@ const CardFace = ({
 
 const MiniCard = ({ card, settings }) => {
   const { deckStyle } = settings;
-  const suitDef = SUITS[card.suit];
+  const suitDef = SUITS[card.suit] || SUITS.spades;
   let textColor = suitDef.defaultColor;
   let bgClass = "bg-white border-gray-300";
   if (deckStyle === "dark") {
@@ -508,7 +508,7 @@ const EdgePlayer = ({
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS GERAIS E CONFIGURAÇÕES BLINDADOS (Try/Catch no LocalStorage)
+  // 2. ESTADOS GERAIS E CONFIGURAÇÕES BLINDADOS (Try/Catch)
   // ============================================================================
   const [playerName, setPlayerName] = useState(() => {
     try {
@@ -543,7 +543,6 @@ export default function App() {
   const [currentHint, setCurrentHint] = useState(null);
 
   const [isShaking, setIsShaking] = useState(false);
-  const [showTrumpBanner, setShowTrumpBanner] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -825,7 +824,7 @@ export default function App() {
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. LÓGICA DE REDE E RECONEXÃO
+  // 3. LÓGICA DE REDE E RECONEXÃO BLINDADA
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -985,7 +984,6 @@ export default function App() {
     setMe((prev) => ({ ...prev, slot: newSlot }));
   };
 
-  // CORREÇÃO: Modo Offline Blindado (Não depende de leitura externa, inicia com valores puros)
   const startSinglePlayer = () => {
     if (!playerName.trim()) return setErrorMsg("Digite seu nome primeiro!");
     const myId = `player_${Date.now()}`;
@@ -1086,7 +1084,6 @@ export default function App() {
   // 4. LÓGICA E CÉREBRO DO JOGO
   // ============================================================================
 
-  // LISTAS BLINDADAS PARA EVITAR TELA BRANCA
   const playersList = roomData?.players
     ? Object.values(roomData.players)
         .filter(Boolean)
@@ -1361,10 +1358,10 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
-  // CORREÇÃO: O Bot agora só escolhe o trunfo se o jogador HUMANO já estiver completamente renderizado
+  // BOT ESCOLHE TRUNFO (BLINDADO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
-    if (!me) return;
+    if (!me || playersList.length === 0) return;
 
     const currentTargetPlayer = playersList.find((p) => p?.id === tocoTarget);
 
@@ -1376,8 +1373,9 @@ export default function App() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, tocoTarget, playersList, me]);
+  }, [gameState, tocoTarget]);
 
+  // BOT JOGA CARTA (BLINDADO CONTRA LOOP DE RENDERIZAÇÃO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
     if (!me || playersList.length === 0) return;
@@ -1387,38 +1385,72 @@ export default function App() {
 
     if (bot && bot.id !== me?.id && tableCards.length < playersList.length) {
       const timer = setTimeout(() => {
+        const currentRoom = stateRef.current;
+        if (!currentRoom || currentRoom.gameState !== "playing") return;
+
+        const cPlayersList = Object.values(currentRoom.players)
+          .filter(Boolean)
+          .sort((a, b) => (a.slot || 0) - (b.slot || 0));
+        const cMyIdx =
+          cPlayersList.findIndex((p) => p?.id === me?.id) !== -1
+            ? cPlayersList.findIndex((p) => p?.id === me?.id)
+            : 0;
+
+        const is2v2Mode = currentRoom.gameMode === "2v2";
+        const cMyTeam = is2v2Mode
+          ? [cPlayersList[cMyIdx], cPlayersList[(cMyIdx + 2) % 4]].filter(
+              Boolean
+            )
+          : [cPlayersList[cMyIdx]].filter(Boolean);
+        const cOpTeam = is2v2Mode
+          ? [
+              cPlayersList[(cMyIdx + 1) % 4],
+              cPlayersList[(cMyIdx + 3) % 4],
+            ].filter(Boolean)
+          : [cPlayersList[(cMyIdx + 1) % 2]].filter(Boolean);
+
         const botId = bot.id;
-        const currentHands = stateRef.current?.hands || {};
+        const currentHands = currentRoom.hands || {};
         const botHand = currentHands[botId] || [];
         if (botHand.length === 0) return;
 
-        const isMyTeamBot = myTeam.some((p) => p?.id === botId);
-        const botScore = isMyTeamBot ? myTeamScore : opTeamScore;
+        const isMyTeamBot = cMyTeam.some((p) => p?.id === botId);
+        const cMyTeamScore = cMyTeam.reduce(
+          (acc, p) => acc + (currentRoom.roundScores[p?.id] || 0),
+          0
+        );
+        const cOpTeamScore = cOpTeam.reduce(
+          (acc, p) => acc + (currentRoom.roundScores[p?.id] || 0),
+          0
+        );
 
+        const botScore = isMyTeamBot ? cMyTeamScore : cOpTeamScore;
         const cardToPlay = getBestCardToPlay(
           botId,
           botHand,
-          stateRef.current.tableCards,
-          stateRef.current.trumpSuit,
+          currentRoom.tableCards || [],
+          currentRoom.trumpSuit,
           botScore
         );
 
         if (cardToPlay) {
           const isHeavy = checkIfHeavy(
             cardToPlay,
-            stateRef.current.tableCards,
-            stateRef.current.trumpSuit
+            currentRoom.tableCards || [],
+            currentRoom.trumpSuit
           );
           const newHand = botHand.filter((c) => c.id !== cardToPlay.id);
           const newTable = [
-            ...stateRef.current.tableCards,
+            ...(currentRoom.tableCards || []),
             { playerId: botId, card: cardToPlay, isHeavy },
           ];
 
-          let nextTurn = turn;
-          if (newTable.length < playersList.length) {
-            nextTurn =
-              playersList[(currentTurnIdx + 1) % playersList.length].id;
+          const cTurn = currentRoom.turn;
+          const cTurnIdx = cPlayersList.findIndex((p) => p?.id === cTurn);
+
+          let nextTurn = cTurn;
+          if (newTable.length < cPlayersList.length) {
+            nextTurn = cPlayersList[(cTurnIdx + 1) % cPlayersList.length].id;
           } else {
             nextTurn = null;
           }
@@ -1431,7 +1463,7 @@ export default function App() {
       }, 1800);
       return () => clearTimeout(timer);
     }
-  }, [turn, gameState, tableCards.length, me, playersList, myTeam]);
+  }, [turn, gameState, tableCards.length]);
 
   const createDeepShuffleDeck = () => {
     let newDeck = [];
@@ -1508,8 +1540,11 @@ export default function App() {
 
       setTimeout(() => {
         if (isOfflineRef.current) {
-          setRoomData((prev) => ({ ...prev, gameState: "playing" }));
-          stateRef.current.gameState = "playing";
+          setRoomData((prev) => {
+            const newState = { ...prev, gameState: "playing" };
+            stateRef.current = newState;
+            return newState;
+          });
         } else {
           update(ref(database, `rooms/${roomId}`), { gameState: "playing" });
         }
@@ -1517,40 +1552,51 @@ export default function App() {
     }
   }, [gameState, me?.isHost]);
 
-  useEffect(() => {
-    if (gameState === "playing" && trumpSuit && tableCards.length === 0) {
-      setShowTrumpBanner(true);
-      const timer = setTimeout(() => setShowTrumpBanner(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState, trumpSuit]);
-
   const handleCardClick = (card) => {
-    if (!me?.id || gameState !== "playing" || turn !== me.id || localProcessing)
+    const currentRoom = stateRef.current;
+    if (
+      !me?.id ||
+      currentRoom.gameState !== "playing" ||
+      currentRoom.turn !== me.id ||
+      localProcessing
+    )
       return;
-    if (tableCards.length >= playersList.length) return;
+
+    const cPlayersList = Object.values(currentRoom.players)
+      .filter(Boolean)
+      .sort((a, b) => (a.slot || 0) - (b.slot || 0));
+    if ((currentRoom.tableCards || []).length >= cPlayersList.length) return;
 
     if (
       settings.vibration &&
       navigator.vibrate &&
-      !checkIfHeavy(card, tableCards, trumpSuit)
+      !checkIfHeavy(card, currentRoom.tableCards || [], currentRoom.trumpSuit)
     )
       navigator.vibrate(40);
 
     setLocalProcessing(true);
     setCurrentHint(null);
 
-    const currentHands = stateRef.current?.hands || {};
+    const currentHands = currentRoom.hands || {};
     const myHand = currentHands[me.id] || [];
     const newHand = myHand.filter((c) => c.id !== card.id);
 
-    const isHeavy = checkIfHeavy(card, tableCards, trumpSuit);
-    const newTable = [...tableCards, { playerId: me.id, card, isHeavy }];
+    const isHeavy = checkIfHeavy(
+      card,
+      currentRoom.tableCards || [],
+      currentRoom.trumpSuit
+    );
+    const newTable = [
+      ...(currentRoom.tableCards || []),
+      { playerId: me.id, card, isHeavy },
+    ];
 
-    const currentTurnIdx = playersList.findIndex((p) => p.id === turn);
-    let nextTurn = turn;
-    if (newTable.length < playersList.length) {
-      nextTurn = playersList[(currentTurnIdx + 1) % playersList.length].id;
+    const currentTurnIdx = cPlayersList.findIndex(
+      (p) => p?.id === currentRoom.turn
+    );
+    let nextTurn = currentRoom.turn;
+    if (newTable.length < cPlayersList.length) {
+      nextTurn = cPlayersList[(currentTurnIdx + 1) % cPlayersList.length].id;
     } else {
       nextTurn = null;
     }
@@ -1565,7 +1611,7 @@ export default function App() {
   useEffect(() => {
     if (tableCards.length > prevTableLength.current) {
       const lastCard = tableCards[tableCards.length - 1];
-      if (lastCard.isHeavy && settings.animations) {
+      if (lastCard && lastCard.isHeavy && settings.animations) {
         playSoundEffect("heavy_card");
         setIsShaking(true);
         setTimeout(() => setIsShaking(false), 400);
@@ -1574,50 +1620,72 @@ export default function App() {
       }
     }
     prevTableLength.current = tableCards.length;
-  }, [tableCards, settings.animations]);
+  }, [tableCards.length, settings.animations]);
 
   useEffect(() => {
     if (
       me?.isHost &&
-      tableCards.length === playersList.length &&
-      playersList.length > 0
+      tableCards.length > 0 &&
+      playersList.length > 0 &&
+      tableCards.length === playersList.length
     ) {
       const timer = setTimeout(() => {
-        resolveRound(tableCards);
+        resolveRound();
       }, 1200);
       return () => clearTimeout(timer);
     }
-  }, [tableCards, playersList.length]);
+  }, [tableCards.length]);
 
   useEffect(() => {
     if (tableCards.length === 0) setLocalProcessing(false);
     if (me?.id && turn === me.id) setLocalProcessing(false);
   }, [tableCards.length, turn, me?.id]);
 
-  const resolveRound = (cards) => {
-    const currentRS = stateRef.current?.roundScores || {};
-    const currentT = stateRef.current?.trumpSuit;
-    const currentHistory = stateRef.current?.trickHistory || [];
+  const resolveRound = () => {
+    const currentRoom = stateRef.current;
+    if (!currentRoom) return;
 
-    let validCards = cards;
-    if (validCards.length === 0) return;
+    const currentRS = currentRoom.roundScores || {};
+    const currentT = currentRoom.trumpSuit;
+    const currentHistory = currentRoom.trickHistory || [];
+    const cards = currentRoom.tableCards || [];
 
-    const leadSuit = validCards[0].card.suit;
-    let winnerCard = validCards[0];
-    let maxPower = getCardPower(validCards[0].card, currentT, leadSuit);
-    let pts = getCardPoints(validCards[0].card, currentT);
+    if (cards.length === 0) return;
 
-    for (let i = 1; i < validCards.length; i++) {
-      pts += getCardPoints(validCards[i].card, currentT);
-      let pwr = getCardPower(validCards[i].card, currentT, leadSuit);
+    const cPlayersList = Object.values(currentRoom.players)
+      .filter(Boolean)
+      .sort((a, b) => (a.slot || 0) - (b.slot || 0));
+    const cMyIdx =
+      cPlayersList.findIndex((p) => p?.id === me?.id) !== -1
+        ? cPlayersList.findIndex((p) => p?.id === me?.id)
+        : 0;
+    const is2v2Mode = currentRoom.gameMode === "2v2";
+
+    const cMyTeam = is2v2Mode
+      ? [cPlayersList[cMyIdx], cPlayersList[(cMyIdx + 2) % 4]].filter(Boolean)
+      : [cPlayersList[cMyIdx]].filter(Boolean);
+    const cOpTeam = is2v2Mode
+      ? [cPlayersList[(cMyIdx + 1) % 4], cPlayersList[(cMyIdx + 3) % 4]].filter(
+          Boolean
+        )
+      : [cPlayersList[(cMyIdx + 1) % 2]].filter(Boolean);
+
+    const leadSuit = cards[0].card.suit;
+    let winnerCard = cards[0];
+    let maxPower = getCardPower(cards[0].card, currentT, leadSuit);
+    let pts = getCardPoints(cards[0].card, currentT);
+
+    for (let i = 1; i < cards.length; i++) {
+      pts += getCardPoints(cards[i].card, currentT);
+      let pwr = getCardPower(cards[i].card, currentT, leadSuit);
       if (pwr > maxPower) {
         maxPower = pwr;
-        winnerCard = validCards[i];
+        winnerCard = cards[i];
       }
     }
 
     const winnerId = winnerCard.playerId;
-    const isMyTeamWin = myTeam.some((p) => p?.id === winnerId);
+    const isMyTeamWin = cMyTeam.some((p) => p?.id === winnerId);
 
     if (isMyTeamWin) playSoundEffect("trick_win");
     else playSoundEffect("trick_lose");
@@ -1625,15 +1693,15 @@ export default function App() {
     const newScores = { ...currentRS };
     newScores[winnerId] = (newScores[winnerId] || 0) + pts;
     const winnerName =
-      playersList.find((p) => p.id === winnerId)?.name || "Alguém";
+      cPlayersList.find((p) => p.id === winnerId)?.name || "Alguém";
     const trickData = {
       id: Date.now(),
       winnerId: winnerId,
       pts: pts,
-      cards: validCards.map((c) => c.card),
+      cards: cards.map((c) => c.card),
     };
 
-    const destinationId = isMyTeamWin ? me?.id : opTeam[0]?.id;
+    const destinationId = isMyTeamWin ? me?.id : cOpTeam[0]?.id;
 
     syncState({
       roundScores: newScores,
@@ -1642,27 +1710,27 @@ export default function App() {
       sweepingTo: destinationId,
     });
 
-    const updatedTeamAScore = myTeam.reduce(
+    const updatedTeamAScore = cMyTeam.reduce(
       (acc, p) => acc + (newScores[p?.id] || 0),
       0
     );
-    const updatedTeamBScore = opTeam.reduce(
+    const updatedTeamBScore = cOpTeam.reduce(
       (acc, p) => acc + (newScores[p?.id] || 0),
       0
     );
 
     if (updatedTeamAScore >= POINTS_GOAL || updatedTeamBScore >= POINTS_GOAL) {
-      const winningTeam = updatedTeamAScore >= POINTS_GOAL ? myTeam : opTeam;
+      const winningTeam = updatedTeamAScore >= POINTS_GOAL ? cMyTeam : cOpTeam;
       setTimeout(() => {
         syncState({ tableCards: [], sweepingTo: null });
-        handleGameEnd(winningTeam);
+        handleGameEnd(winningTeam, currentRoom, cPlayersList, cMyTeam, cOpTeam);
       }, 800);
     } else {
       setTimeout(() => {
         const freshDeck = [...(stateRef.current?.deck || [])];
         const freshHands = { ...(stateRef.current?.hands || {}) };
 
-        validCards.forEach((tc) => {
+        cards.forEach((tc) => {
           if (freshDeck.length > 0) {
             const c = freshDeck.shift();
             if (freshHands[tc.playerId])
@@ -1683,14 +1751,20 @@ export default function App() {
     }
   };
 
-  const handleGameEnd = (winningTeam) => {
+  const handleGameEnd = (
+    winningTeam,
+    currentRoom,
+    cPlayersList,
+    cMyTeam,
+    cOpTeam
+  ) => {
     const {
       tocoTarget: currentTarget,
       lives: currentLives,
       gamePoints: currentGP,
-    } = stateRef.current;
+    } = currentRoom;
 
-    const currentTargetIdx = playersList.findIndex(
+    const currentTargetIdx = cPlayersList.findIndex(
       (p) => p.id === currentTarget
     );
     const targetIsInWinningTeam = winningTeam.some(
@@ -1702,7 +1776,7 @@ export default function App() {
 
     const isMyTeamWinner = winningTeam.some((p) => p?.id === me?.id);
     const winnerRepId = winningTeam[0]?.id;
-    const loserTeam = isMyTeamWinner ? opTeam : myTeam;
+    const loserTeam = isMyTeamWinner ? cOpTeam : cMyTeam;
     const loserRepId = loserTeam[0]?.id;
 
     if (isMyTeamWinner) playSoundEffect("win");
@@ -1713,9 +1787,9 @@ export default function App() {
     }
 
     if (targetIsInWinningTeam) {
-      let nextOpIdx = (currentTargetIdx + 1) % playersList.length;
+      let nextOpIdx = (currentTargetIdx + 1) % cPlayersList.length;
       resultType = "escaped";
-      updates = { tocoTarget: playersList[nextOpIdx].id, lives: 3 };
+      updates = { tocoTarget: cPlayersList[nextOpIdx].id, lives: 3 };
     } else {
       const newLives = currentLives - 1;
       updates = { lives: newLives };
@@ -1725,12 +1799,13 @@ export default function App() {
       } else {
         resultType = "toco_confirmed";
         const gPoints = { ...currentGP };
+
         gPoints[currentTarget] = (gPoints[currentTarget] || 0) + 1;
-        let partnerIdx = (currentTargetIdx + 2) % playersList.length;
+        let partnerIdx = (currentTargetIdx + 2) % cPlayersList.length;
         updates = {
           gamePoints: gPoints,
           lives: 3,
-          tocoTarget: playersList[partnerIdx].id,
+          tocoTarget: cPlayersList[partnerIdx].id,
         };
       }
     }
@@ -1740,7 +1815,7 @@ export default function App() {
       isMyTeamWinner,
       winnerId: winnerRepId,
       loserId: loserRepId,
-      tocoTargetName: playersList[currentTargetIdx]?.name,
+      tocoTargetName: cPlayersList[currentTargetIdx]?.name,
     };
     updates.gameState = "round_end";
     updates.trickFeedback = null;
@@ -1869,6 +1944,58 @@ export default function App() {
               <div className="bg-white/10 rounded p-2">
                 <span className="text-xl block">Q</span> 2 pts
               </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              *Cartas 6, 5, 4, 3 e 2 (fora do trunfo) são "limpas" e valem 0
+              pontos.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ✨ O Poder do Trunfo
+            </h3>
+            <p className="mb-2">
+              Quando o naipe é o Trunfo da rodada, as cartas baixas ganham
+              superpoderes e passam a valer pontos:
+            </p>
+            <div className="grid grid-cols-5 gap-2 text-center font-bold">
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">3</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">2</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">4</span> 4 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">5</span> 3 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">6</span> 2 pts
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ⚔️ Hierarquia de Força
+            </h3>
+            <p className="mb-1 text-xs text-gray-400">
+              Quem ganha a mão? (Da mais forte para a mais fraca)
+            </p>
+            <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+              <p className="mb-2">
+                <strong className="text-white">Naipe Normal:</strong>
+                <br /> A &gt; 7 &gt; K &gt; J &gt; Q &gt; 6 &gt; 5 &gt; 4 &gt; 3
+                &gt; 2
+              </p>
+              <p>
+                <strong className="text-blue-400">No Trunfo:</strong>
+                <br /> A &gt; 3 &gt; 7 &gt; 2 &gt; K &gt; 4 &gt; J &gt; 5 &gt; Q
+                &gt; 6
+              </p>
             </div>
           </section>
         </div>
@@ -2209,7 +2336,7 @@ export default function App() {
     );
   }
 
-  // --- TELA DE AGUARDANDO JOGADOR ---
+  // --- TELA DE LOBBY ---
   if (gameState === "lobby" && !isSinglePlayer) {
     const requiredPlayers = gameMode === "2v2" ? 4 : 2;
     return (
