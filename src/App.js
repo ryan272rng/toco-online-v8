@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
-import { ref, onValue, update, get, set } from "firebase/database";
+import { ref, onValue, set, update, get } from "firebase/database";
+// RESTAURADO PARA EVITAR TELA BRANCA NO CODESANDBOX
+import {
+  insertCoin,
+  myPlayer,
+  isHost,
+  useMultiplayerState,
+  usePlayersList,
+} from "playroomkit";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (SEM BIBLIOTECAS FANTASMAS)
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
 // MOTOR DE ÁUDIO GLOBAL OTIMIZADO
@@ -343,7 +351,7 @@ const CardFace = ({
 
 const MiniCard = ({ card, settings }) => {
   const { deckStyle } = settings;
-  const suitDef = SUITS[card.suit] || SUITS.spades;
+  const suitDef = SUITS[card.suit];
   let textColor = suitDef.defaultColor;
   let bgClass = "bg-white border-gray-300";
   if (deckStyle === "dark") {
@@ -508,7 +516,7 @@ const EdgePlayer = ({
 
 export default function App() {
   // ============================================================================
-  // 2. ESTADOS GERAIS E CONFIGURAÇÕES BLINDADOS (Try/Catch)
+  // 2. ESTADOS GERAIS E CONFIGURAÇÕES
   // ============================================================================
   const [playerName, setPlayerName] = useState(() => {
     try {
@@ -543,6 +551,7 @@ export default function App() {
   const [currentHint, setCurrentHint] = useState(null);
 
   const [isShaking, setIsShaking] = useState(false);
+  const [showTrumpBanner, setShowTrumpBanner] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -824,7 +833,7 @@ export default function App() {
   }, [roomData?.tableCards?.length, roomData?.turn]);
 
   // ============================================================================
-  // 3. LÓGICA DE REDE E RECONEXÃO BLINDADA
+  // 3. LÓGICA DE REDE E RECONEXÃO
   // ============================================================================
   const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -1358,7 +1367,6 @@ export default function App() {
     setCurrentHint({ cardId: bestCard.id, text: explanation });
   };
 
-  // BOT ESCOLHE TRUNFO (BLINDADO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "choose_trump") return;
     if (!me || playersList.length === 0) return;
@@ -1373,9 +1381,8 @@ export default function App() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, tocoTarget]);
+  }, [gameState, tocoTarget, playersList, me]);
 
-  // BOT JOGA CARTA (BLINDADO CONTRA LOOP DE RENDERIZAÇÃO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
     if (!me || playersList.length === 0) return;
@@ -1551,6 +1558,14 @@ export default function App() {
       }, 3000);
     }
   }, [gameState, me?.isHost]);
+
+  useEffect(() => {
+    if (gameState === "playing" && trumpSuit && tableCards.length === 0) {
+      setShowTrumpBanner(true);
+      const timer = setTimeout(() => setShowTrumpBanner(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState, trumpSuit]);
 
   const handleCardClick = (card) => {
     const currentRoom = stateRef.current;
@@ -2659,13 +2674,12 @@ export default function App() {
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-full border border-white/20 shadow-lg">
               <PlayerAvatar
-                src={playersList.find((p) => p?.id === tocoTarget)?.avatar}
-                name={playersList.find((p) => p?.id === tocoTarget)?.name}
+                src={playersList.find((p) => p.id === tocoTarget)?.avatar}
+                name={playersList.find((p) => p.id === tocoTarget)?.name}
                 size="sm"
               />
               <span className="text-white font-bold uppercase tracking-widest text-sm md:text-base">
-                {playersList.find((p) => p?.id === tocoTarget)?.name ||
-                  "Alguém"}{" "}
+                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}{" "}
                 escolheu o trunfo:
               </span>
             </div>
@@ -2876,7 +2890,7 @@ export default function App() {
                     trumpSuit={trumpSuit}
                   />
                   <span className="bg-black/60 backdrop-blur text-white text-[10px] md:text-xs px-3 md:px-4 py-1 rounded-full mt-3 font-bold shadow-lg border border-white/20">
-                    {playersList.find((p) => p?.id === tc.playerId)?.name ||
+                    {playersList.find((p) => p.id === tc.playerId)?.name ||
                       "Robô"}
                   </span>
                 </div>
@@ -3036,8 +3050,7 @@ export default function App() {
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-yellow-400 mb-2 drop-shadow">
                 Aguardando{" "}
-                {playersList.find((p) => p?.id === tocoTarget)?.name ||
-                  "Alguém"}
+                {playersList.find((p) => p.id === tocoTarget)?.name || "Alguém"}
                 ...
               </h2>
               <p className="text-gray-300 text-sm font-medium">
