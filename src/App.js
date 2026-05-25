@@ -3,7 +3,7 @@ import { database } from "./firebase";
 import { ref, onValue, update, get, set } from "firebase/database";
 
 // ============================================================================
-// 1. CONFIGURAÇÕES GERAIS E CONSTANTES (SEM BIBLIOTECAS EXTERNAS PESADAS)
+// 1. CONFIGURAÇÕES GERAIS E CONSTANTES
 // ============================================================================
 
 // MOTOR DE ÁUDIO GLOBAL OTIMIZADO
@@ -230,7 +230,7 @@ const CardFace = ({
   settings,
 }) => {
   const { deckStyle, cardSize } = settings;
-  const suitDef = SUITS[card.suit] || SUITS.spades; // Proteção extra contra quebra de renderização
+  const suitDef = SUITS[card.suit];
   const isTrump = card.suit === trumpSuit;
   const opacityClass =
     localProcessing && playable ? "opacity-50 cursor-wait" : "opacity-100";
@@ -412,7 +412,6 @@ const EdgePlayer = ({
   settings,
 }) => {
   if (!player) return null;
-  const isTarget = tocoTarget === player.id;
 
   let containerClass =
     "absolute flex flex-col items-center z-10 transition-all duration-300 ";
@@ -558,11 +557,12 @@ export default function App() {
   const [settings, setSettings] = useState(() => {
     try {
       const saved = localStorage.getItem("tocoSettings");
+      // Dicas (showHints) alteradas para FALSE por padrão
       return saved
         ? JSON.parse(saved)
         : {
             sound: true,
-            showHints: true,
+            showHints: false,
             deckStyle: "default",
             cardSize: "normal",
             animations: true,
@@ -572,7 +572,7 @@ export default function App() {
     } catch (e) {
       return {
         sound: true,
-        showHints: true,
+        showHints: false,
         deckStyle: "default",
         cardSize: "normal",
         animations: true,
@@ -1379,7 +1379,7 @@ export default function App() {
     }
   }, [gameState, tocoTarget, playersList, me]);
 
-  // BOT JOGA CARTA (BLINDADO)
+  // BOT JOGA CARTA (BLINDADO CONTRA LOOP DE RENDERIZAÇÃO)
   useEffect(() => {
     if (!isOfflineRef.current || gameState !== "playing") return;
     if (!me || playersList.length === 0) return; // TRAVA DE SEGURANÇA
@@ -1959,6 +1959,58 @@ export default function App() {
                 <span className="text-xl block">Q</span> 2 pts
               </div>
             </div>
+            <p className="mt-2 text-xs text-gray-400">
+              *Cartas 6, 5, 4, 3 e 2 (fora do trunfo) são "limpas" e valem 0
+              pontos.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ✨ O Poder do Trunfo
+            </h3>
+            <p className="mb-2">
+              Quando o naipe é o Trunfo da rodada, as cartas baixas ganham
+              superpoderes e passam a valer pontos:
+            </p>
+            <div className="grid grid-cols-5 gap-2 text-center font-bold">
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">3</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">2</span> 10 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">4</span> 4 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">5</span> 3 pts
+              </div>
+              <div className="bg-blue-900/40 border border-blue-500/30 rounded p-2">
+                <span className="text-xl block text-blue-400">6</span> 2 pts
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-yellow-400 mb-2 border-l-4 border-yellow-500 pl-2">
+              ⚔️ Hierarquia de Força
+            </h3>
+            <p className="mb-1 text-xs text-gray-400">
+              Quem ganha a mão? (Da mais forte para a mais fraca)
+            </p>
+            <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+              <p className="mb-2">
+                <strong className="text-white">Naipe Normal:</strong>
+                <br /> A &gt; 7 &gt; K &gt; J &gt; Q &gt; 6 &gt; 5 &gt; 4 &gt; 3
+                &gt; 2
+              </p>
+              <p>
+                <strong className="text-blue-400">No Trunfo:</strong>
+                <br /> A &gt; 3 &gt; 7 &gt; 2 &gt; K &gt; 4 &gt; J &gt; 5 &gt; Q
+                &gt; 6
+              </p>
+            </div>
           </section>
         </div>
       </div>
@@ -2522,14 +2574,6 @@ export default function App() {
           <span className="text-gray-500 font-black text-sm italic mb-1">
             VS
           </span>
-          {!isSinglePlayer && (
-            <span
-              className="text-[9px] md:text-[10px] text-yellow-500/80 notranslate bg-black/50 px-1 rounded shadow-inner"
-              title="PIN da Sala"
-            >
-              {roomId}
-            </span>
-          )}
           {is2v2 && (
             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">
               2v2
