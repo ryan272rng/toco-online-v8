@@ -557,18 +557,20 @@ export default function App() {
   const [settings, setSettings] = useState(() => {
     try {
       const saved = localStorage.getItem("tocoSettings");
-      // Dicas (showHints) alteradas para FALSE por padrão
-      return saved
-        ? JSON.parse(saved)
-        : {
-            sound: true,
-            showHints: false,
-            deckStyle: "default",
-            cardSize: "normal",
-            animations: true,
-            tableStyle: "tradicional",
-            bgm: true,
-          };
+      if (saved) {
+        const parsedSettings = JSON.parse(saved);
+        // CORREÇÃO: Garante que as dicas sempre iniciem desligadas, ignorando o cache
+        return { ...parsedSettings, showHints: false };
+      }
+      return {
+        sound: true,
+        showHints: false,
+        deckStyle: "default",
+        cardSize: "normal",
+        animations: true,
+        tableStyle: "tradicional",
+        bgm: true,
+      };
     } catch (e) {
       return {
         sound: true,
@@ -2926,7 +2928,7 @@ export default function App() {
               >
                 <CardFanIcon />
                 <span className="text-[10px] md:text-xs font-bold tracking-wider">
-                  Mãos ({myTricks.length})
+                  Mãos ({trickHistory.length})
                 </span>
               </button>
               {is2v2 && (
@@ -3072,14 +3074,14 @@ export default function App() {
             </button>
           </div>
           <div className="w-full max-w-md flex flex-col gap-4 pb-10">
-            {myTricks.length === 0 ? (
+            {trickHistory.length === 0 ? (
               <div className="bg-white/5 border border-white/10 p-8 rounded-2xl text-center shadow-inner">
                 <p className="text-gray-400 font-medium">
                   {is2v2 ? "Seu time" : "Você"} ainda não levou nenhuma mão.
                 </p>
               </div>
             ) : (
-              myTricks.map((trick, index) => (
+              trickHistory.map((trick, index) => (
                 <div
                   key={trick.id}
                   className="bg-white/10 p-4 rounded-xl border border-white/20 flex flex-col items-center relative shadow-lg"
