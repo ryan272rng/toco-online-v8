@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { database } from "./firebase";
-// 1. IMPORTAÇÃO DO ONDISCONNECT ADICIONADA
 import {
   ref,
   onValue,
@@ -900,7 +899,6 @@ export default function App() {
       isOfflineRef.current = false;
       await set(ref(database, `rooms/${newPin}`), initialRoomData);
 
-      // PROTEÇÃO 1: Se o criador (host) fechar a aba, ele é removido da sala automaticamente
       onDisconnect(ref(database, `rooms/${newPin}/players/${myId}`)).remove();
 
       setMe(newMe);
@@ -977,7 +975,6 @@ export default function App() {
           });
         }
 
-        // PROTEÇÃO 1: Se o jogador que entrou fechar a aba, remove ele da sala
         onDisconnect(
           ref(database, `rooms/${pinInput}/players/${myId}`)
         ).remove();
@@ -1102,7 +1099,7 @@ export default function App() {
   }, [roomId, isNetworkOffline]);
 
   // ============================================================================
-  // 4. LÓGICA E CÉREBRO DO JOGO
+  // 4. LÓGICA E CÉREBRO DO JOGO (NOVA INTELIGÊNCIA ARTIFICIAL - BOT COM MEMÓRIA)
   // ============================================================================
 
   const playersList = roomData?.players
@@ -1229,14 +1226,22 @@ export default function App() {
     return false;
   };
 
+  // NOVA IA: Bot com Visão de Jogo e Trabalho em Equipe
   const getBestCardToPlay = (
     playerId,
     currentHand,
     currentTable,
     currentTrump,
-    currentScore
+    currentScore,
+    trickHistoryList,
+    playersListParam,
+    gameModeParam
   ) => {
     const isFirstToPlay = currentTable.length === 0;
+    const botIdx = playersListParam.findIndex((p) => p.id === playerId);
+    const is2v2Mode = gameModeParam === "2v2";
+    const partnerId = is2v2Mode ? playersListParam[(botIdx + 2) % 4]?.id : null;
+
     const myTrumps = currentHand
       .filter((card) => card.suit === currentTrump)
       .sort(
@@ -1244,17 +1249,41 @@ export default function App() {
           getCardPower(a, currentTrump, currentTrump) -
           getCardPower(b, currentTrump, currentTrump)
       );
-    const lowTrumps = myTrumps.filter((card) =>
-      ["Q", "J", "K", "4", "5", "6"].includes(card.label)
-    );
-    const sortedHandByPtsAsc = [...currentHand].sort(
-      (a, b) => getCardPoints(a, currentTrump) - getCardPoints(b, currentTrump)
+    const myNonTrumps = currentHand.filter(
+      (card) => card.suit !== currentTrump
     );
 
+    // Função interna para ranquear do "Pior" para o "Melhor" (usada para descarte)
+    const sortWorstToBest = (cards, leadSuit) =>
+      [...cards].sort((a, b) => {
+        let ptsA = getCardPoints(a, currentTrump);
+        let ptsB = getCardPoints(b, currentTrump);
+        if (ptsA !== ptsB) return ptsA - ptsB; // Joga os com menos pontos primeiro
+        return (
+          getCardPower(a, currentTrump, leadSuit) -
+          getCardPower(b, currentTrump, leadSuit)
+        ); // Se pontos iguais, joga o mais fraco
+      });
+
+    // SISTEMA DE MEMÓRIA: Verifica se trunfos fortes já saíram
+    let highestTrumpPlayed = false;
+    trickHistoryList.forEach((trick) => {
+      trick.cards.forEach((c) => {
+        if (c.suit === currentTrump && c.label === "A")
+          highestTrumpPlayed = true;
+      });
+    });
+
+    // 1. CHECAGEM DE VITÓRIA IMEDIATA (INSTA-WIN)
     if (!isFirstToPlay) {
       const leadSuit = currentTable[0].card.suit;
-      let maxTablePower = 0;
       let tablePoints = 0;
+      let maxTablePower = getCardPower(
+        currentTable[0].card,
+        currentTrump,
+        leadSuit
+      );
+
       for (let tc of currentTable) {
         tablePoints += getCardPoints(tc.card, currentTrump);
         let pwr = getCardPower(tc.card, currentTrump, leadSuit);
@@ -1264,6 +1293,7 @@ export default function App() {
       for (let card of currentHand) {
         const cardPts = getCardPoints(card, currentTrump);
         const cardPower = getCardPower(card, currentTrump, leadSuit);
+        // Se a carta ganha a rodada e fecha 31 pontos cravado, JOGA ELA!
         if (
           cardPower > maxTablePower &&
           currentScore + tablePoints + cardPts >= POINTS_GOAL
@@ -1273,39 +1303,95 @@ export default function App() {
     }
 
     if (isFirstToPlay) {
-      if (lowTrumps.length > 0) return lowTrumps[0];
-      return sortedHandByPtsAsc[0];
-    } else {
-      const leadSuit = currentTable[0].card.suit;
-      let maxTablePower = 0;
-      let opPts = 0;
-      let hasTrumpOnTable = false;
+      // ESTRATÉGIA DE SAÍDA
+      // Se tem trunfos pra gastar e o maior já saiu, "sangra" o oponente jogando baixo trunfo.
+      if (myTrumps.length >= 2 && !highestTrumpPlayed) return myTrumps[0];
 
-      for (let tc of currentTable) {
-        opPts += getCardPoints(tc.card, currentTrump);
-        let pwr = getCardPower(tc.card, currentTrump, leadSuit);
-        if (pwr > maxTablePower) maxTablePower = pwr;
-        if (tc.card.suit === currentTrump) hasTrumpOnTable = true;
+      // Senão, joga a pior carta suja (0 pontos) para testar a mesa
+      const cleanCards = myNonTrumps.filter(
+        (c) => getCardPoints(c, currentTrump) === 0
+      );
+      if (cleanCards.length > 0) return sortWorstToBest(cleanCards, null)[0];
+
+      // Se não tem jeito, joga a carta que causa menos prejuízo
+      return sortWorstToBest(currentHand, null)[0];
+    } else {
+      // ESTRATÉGIA DE RESPOSTA (FOLLOWING)
+      const leadSuit = currentTable[0].card.suit;
+      let tablePoints = currentTable.reduce(
+        (acc, tc) => acc + getCardPoints(tc.card, currentTrump),
+        0
+      );
+
+      let currentWinner = currentTable[0];
+      let maxTablePower = getCardPower(
+        currentWinner.card,
+        currentTrump,
+        leadSuit
+      );
+      for (let i = 1; i < currentTable.length; i++) {
+        let pwr = getCardPower(currentTable[i].card, currentTrump, leadSuit);
+        if (pwr > maxTablePower) {
+          maxTablePower = pwr;
+          currentWinner = currentTable[i];
+        }
       }
 
-      const winningCards = currentHand.filter(
-        (c) => getCardPower(c, currentTrump, leadSuit) > maxTablePower
-      );
-      const winningLeadSuit = winningCards.filter((c) => c.suit === leadSuit);
-      const winningTrumps = winningCards.filter((c) => c.suit === currentTrump);
-
-      if (
-        winningLeadSuit.length > 0 &&
-        (opPts > 0 || getCardPoints(winningLeadSuit[0], currentTrump) > 0)
-      ) {
-        return [...winningLeadSuit].sort(
+      const isPartnerWinning =
+        is2v2Mode && currentWinner.playerId === partnerId;
+      const amILast = currentTable.length === (is2v2Mode ? 3 : 1);
+      const validCards = sortWorstToBest(currentHand, leadSuit);
+      const winningCards = currentHand
+        .filter((c) => getCardPower(c, currentTrump, leadSuit) > maxTablePower)
+        .sort(
           (a, b) =>
-            getCardPoints(b, currentTrump) - getCardPoints(a, currentTrump)
-        )[0];
-      } else if (!hasTrumpOnTable && winningTrumps.length > 0 && opPts >= 2) {
-        return winningTrumps[0];
+            getCardPower(a, currentTrump, leadSuit) -
+            getCardPower(b, currentTrump, leadSuit)
+        );
+
+      if (isPartnerWinning) {
+        // MEU PARCEIRO ESTÁ GANHANDO!
+        if (amILast) {
+          // Sou o último a jogar! O parceiro ganhou a mão! Vou mandar pontos pra ele (Encartar)!
+          const pointCards = [...currentHand].sort(
+            (a, b) =>
+              getCardPoints(b, currentTrump) - getCardPoints(a, currentTrump)
+          ); // Puxa os maiores pontos primeiro
+          return pointCards[0];
+        } else {
+          // Parceiro ganhando, mas o oponente ainda joga.
+          // Joga cartas que deem uns pontos médios, mas não arrisca Ás caso o oponente corte.
+          const safePointCards = currentHand.filter(
+            (c) =>
+              getCardPoints(c, currentTrump) > 0 &&
+              getCardPoints(c, currentTrump) < 10
+          );
+          if (safePointCards.length > 0) return safePointCards[0];
+          return validCards[0]; // Joga o lixo
+        }
       } else {
-        return sortedHandByPtsAsc[0];
+        // OPONENTE ESTÁ GANHANDO!
+        if (winningCards.length > 0) {
+          // Eu POSSO ganhar, mas compensa?
+          if (tablePoints >= 2 || amILast) {
+            // Tem ponto na mesa ou sou o último, vale a pena cortar/encartar.
+            // Usa a carta MAIS FRACA POSSÍVEL capaz de bater a do oponente (Economia).
+            return winningCards[0];
+          } else {
+            // A mesa tem 0 pontos. É um desperdício gastar um trunfo alto.
+            const cheapWinningCards = winningCards.filter(
+              (c) =>
+                c.suit !== currentTrump || getCardPoints(c, currentTrump) === 0
+            );
+            if (cheapWinningCards.length > 0) return cheapWinningCards[0]; // Só ganha se custar barato
+
+            // Prefere perder a rodada e descarregar uma carta lixo do que desperdiçar trunfo
+            return validCards[0];
+          }
+        } else {
+          // Não consigo ganhar a mão de jeito nenhum. Descarrega a pior carta absoluta.
+          return validCards[0];
+        }
       }
     }
   };
@@ -1315,12 +1401,16 @@ export default function App() {
     const myHand = hands[me.id] || [];
     if (myHand.length === 0) return;
 
+    // Atualizado para receber os novos parâmetros da IA
     const bestCard = getBestCardToPlay(
       me.id,
       myHand,
       tableCards,
       trumpSuit,
-      myTeamScore
+      myTeamScore,
+      trickHistory,
+      playersList,
+      gameMode
     );
     if (!bestCard) return;
 
@@ -1444,12 +1534,17 @@ export default function App() {
         );
 
         const botScore = isMyTeamBot ? cMyTeamScore : cOpTeamScore;
+
+        // Chamando a nova Inteligência Artificial
         const cardToPlay = getBestCardToPlay(
           botId,
           botHand,
           currentRoom.tableCards || [],
           currentRoom.trumpSuit,
-          botScore
+          botScore,
+          currentRoom.trickHistory || [],
+          cPlayersList,
+          currentRoom.gameMode
         );
 
         if (cardToPlay) {
@@ -1604,7 +1699,6 @@ export default function App() {
 
     setLocalProcessing(true);
 
-    // PROTEÇÃO 2: Trava de Segurança. Se a rede não responder em 3 segundos, destrava a interface.
     setTimeout(() => {
       setLocalProcessing(false);
     }, 3000);
@@ -1704,7 +1798,6 @@ export default function App() {
         )
       : [cPlayersList[(cMyIdx + 1) % 2]].filter(Boolean);
 
-    // PROTEÇÃO 3: Optional Chaining para evitar Tela Branca
     const leadSuit = cards[0]?.card?.suit;
     let winnerCard = cards[0];
     let maxPower = getCardPower(cards[0].card, currentT, leadSuit);
@@ -1736,7 +1829,6 @@ export default function App() {
       cards: cards.map((c) => c.card),
     };
 
-    // PROTEÇÃO 4: Fallback caso falte alguém na equipe (ex: desconexão)
     const destinationId = isMyTeamWin ? me?.id : cOpTeam[0]?.id || me?.id;
 
     syncState({
@@ -1822,7 +1914,6 @@ export default function App() {
         navigator.vibrate([100, 50, 100]);
     }
 
-    // PROTEÇÃO 5: Evita Divisão por Zero (NaN) e acessos indefinidos que causam Tela Branca
     const safePlayerLength = cPlayersList.length || 1;
 
     if (targetIsInWinningTeam) {
